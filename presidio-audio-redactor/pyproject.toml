@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "presidio-audio-redactor"
+version = "0.1.0"
+description = "PII redaction for audio transcripts using Presidio and Whisper"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+dependencies = [
+    "presidio-analyzer",
+    "presidio-anonymizer",
+    "openai-whisper",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
