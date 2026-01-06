@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Sales Call Analyzer{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="app">
+        <nav class="navbar">
+            <div class="nav-brand">
+                <a href="{{ url_for('index') }}">📞 Sales Call Analyzer</a>
+            </div>
+            <div class="nav-links">
+                {% if session.get('user_email') %}
+                    <span class="user-email">{{ session.user_email }}</span>
+                    <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline">Logout</a>
+                {% endif %}
+            </div>
+        </nav>
+
+        <main class="main-content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flash-messages">
+                        {% for category, message in messages %}
+                            <div class="flash flash-{{ category }}">
+                                {{ message }}
+                                <button class="flash-close" onclick="this.parentElement.remove()">&times;</button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="footer">
+            <p>Sales Call Analyzer &middot; Powered by Presidio + Whisper</p>
+        </footer>
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
+

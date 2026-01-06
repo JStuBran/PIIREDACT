@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Call - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="upload-container">
+    <div class="upload-card">
+        <div class="upload-header">
+            <h1>Upload Sales Call</h1>
+            <p class="subtitle">Drop an audio file to analyze. We'll redact PII and generate a coaching report.</p>
+        </div>
+
+        <form method="POST" enctype="multipart/form-data" id="upload-form">
+            <div class="dropzone" id="dropzone">
+                <div class="dropzone-content">
+                    <div class="dropzone-icon">🎙️</div>
+                    <p class="dropzone-text">Drag & drop your audio file here</p>
+                    <p class="dropzone-hint">or click to browse</p>
+                    <p class="dropzone-formats">MP3, WAV, M4A, OGG, FLAC, WebM (max 100MB)</p>
+                </div>
+                <input 
+                    type="file" 
+                    id="audio" 
+                    name="audio" 
+                    accept=".mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4"
+                    required
+                    hidden
+                >
+            </div>
+
+            <div class="file-preview" id="file-preview" style="display: none;">
+                <div class="file-info">
+                    <span class="file-icon">📁</span>
+                    <span class="file-name" id="file-name"></span>
+                    <span class="file-size" id="file-size"></span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline" id="clear-file">Remove</button>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full" id="submit-btn" disabled>
+                Analyze Call
+            </button>
+        </form>
+
+        <div class="upload-info">
+            <h3>What happens next?</h3>
+            <ol>
+                <li>🔒 <strong>PII Redaction</strong> - Names, numbers, and sensitive info are automatically redacted</li>
+                <li>🤖 <strong>AI Analysis</strong> - GPT-4o reviews the call and generates coaching feedback</li>
+                <li>📄 <strong>Reports</strong> - You'll receive a coaching report and call stats via email</li>
+            </ol>
+            <p class="privacy-note">
+                <strong>Privacy:</strong> Your audio never leaves our servers unredacted. 
+                Only the anonymized transcript is sent to OpenAI for analysis.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('audio');
+const filePreview = document.getElementById('file-preview');
+const fileName = document.getElementById('file-name');
+const fileSize = document.getElementById('file-size');
+const clearBtn = document.getElementById('clear-file');
+const submitBtn = document.getElementById('submit-btn');
+
+// Click to browse
+dropzone.addEventListener('click', () => fileInput.click());
+
+// Drag events
+dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dragover');
+});
+
+dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('dragover');
+});
+
+dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    
+    if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        updateFilePreview();
+    }
+});
+
+// File selection
+fileInput.addEventListener('change', updateFilePreview);
+
+function updateFilePreview() {
+    if (fileInput.files.length) {
+        const file = fileInput.files[0];
+        fileName.textContent = file.name;
+        fileSize.textContent = formatBytes(file.size);
+        filePreview.style.display = 'flex';
+        dropzone.style.display = 'none';
+        submitBtn.disabled = false;
+    }
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+clearBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    filePreview.style.display = 'none';
+    dropzone.style.display = 'flex';
+    submitBtn.disabled = true;
+});
+
+// Form submission
+document.getElementById('upload-form').addEventListener('submit', () => {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span> Uploading...';
+});
+</script>
+{% endblock %}
+

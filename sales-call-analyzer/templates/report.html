@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Report - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="report-container">
+    <div class="report-header">
+        <div>
+            <h1>Call Analysis Report</h1>
+            <p class="subtitle">{{ job.filename }} &middot; {{ job.completed_at[:10] if job.completed_at else '' }}</p>
+        </div>
+        <div class="report-actions">
+            <a href="{{ url_for('download', job_id=job.id, report_type='coaching') }}" class="btn btn-primary">
+                📄 Download Coaching PDF
+            </a>
+            <a href="{{ url_for('download', job_id=job.id, report_type='stats') }}" class="btn btn-outline">
+                📊 Download Stats PDF
+            </a>
+        </div>
+    </div>
+
+    <div class="report-grid">
+        <!-- Overall Summary -->
+        <section class="report-section full-width">
+            <h2>🔍 Overall Summary</h2>
+            <p>{{ analysis.overall_summary or 'No summary available.' }}</p>
+        </section>
+
+        <!-- Highlights -->
+        {% if analysis.highlights %}
+        <section class="report-section">
+            <h2>📈 Highlights</h2>
+            <ul>
+                {% for highlight in analysis.highlights %}
+                    <li>{{ highlight }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        <!-- Objection Handling -->
+        <section class="report-section">
+            <h2>🧱 Objection Handling</h2>
+            <table>
+                <tr>
+                    <td><strong>Objection</strong></td>
+                    <td>{{ analysis.objection_handling.objection or 'None' }}</td>
+                </tr>
+                <tr>
+                    <td><strong>Suggestion</strong></td>
+                    <td>{{ analysis.objection_handling.improvement or '-' }}</td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- Coaching -->
+        <section class="report-section full-width">
+            <h2>🧠 Coaching Commentary</h2>
+            <div class="coaching-grid">
+                <div>
+                    <h4>✅ Done Well</h4>
+                    <ul>
+                        {% for item in analysis.coaching.done_well %}
+                            <li>{{ item }}</li>
+                        {% else %}
+                            <li class="muted">No items</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div>
+                    <h4>📈 Areas to Improve</h4>
+                    <ul>
+                        {% for item in analysis.coaching.improve %}
+                            <li>{{ item }}</li>
+                        {% else %}
+                            <li class="muted">No items</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% if analysis.coaching.focus_next %}
+            <div class="focus-chip">
+                🎯 <strong>Focus for Next Call:</strong> {{ analysis.coaching.focus_next }}
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Timestamp Highlights -->
+        {% if analysis.timestamp_highlights %}
+        <section class="report-section">
+            <h2>⏱️ Key Moments</h2>
+            <ol>
+                {% for ts in analysis.timestamp_highlights %}
+                    <li>{{ ts }}</li>
+                {% endfor %}
+            </ol>
+        </section>
+        {% endif %}
+
+        <!-- Stats -->
+        <section class="report-section">
+            <h2>📊 Call Stats</h2>
+            <table>
+                <tr>
+                    <td>Duration</td>
+                    <td>{{ stats.duration_min }} min</td>
+                </tr>
+                <tr>
+                    <td>Speaker Turns</td>
+                    <td>{{ stats.turns }}</td>
+                </tr>
+                <tr>
+                    <td>Questions Asked</td>
+                    <td>{{ stats.questions.agent_total if stats.questions else 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Filler Words</td>
+                    <td>{{ stats.filler.agent_count if stats.filler else 0 }}</td>
+                </tr>
+            </table>
+        </section>
+    </div>
+
+    <div class="report-footer">
+        <a href="{{ url_for('upload') }}" class="btn btn-outline">← Analyze Another Call</a>
+    </div>
+</div>
+{% endblock %}
+

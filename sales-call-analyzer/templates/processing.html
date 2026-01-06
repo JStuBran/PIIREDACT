@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Processing - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="processing-container">
+    <div class="processing-card">
+        <div class="processing-header">
+            <h1>Analyzing Your Call</h1>
+            <p class="subtitle">{{ job.filename }}</p>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-steps">
+                <div class="step" id="step-transcribing">
+                    <div class="step-icon">🎙️</div>
+                    <div class="step-label">Transcribing</div>
+                    <div class="step-status"></div>
+                </div>
+                <div class="step" id="step-analyzing">
+                    <div class="step-icon">🤖</div>
+                    <div class="step-label">AI Analysis</div>
+                    <div class="step-status"></div>
+                </div>
+                <div class="step" id="step-generating_pdf">
+                    <div class="step-icon">📄</div>
+                    <div class="step-label">Creating PDFs</div>
+                    <div class="step-status"></div>
+                </div>
+                <div class="step" id="step-sending_email">
+                    <div class="step-icon">✉️</div>
+                    <div class="step-label">Sending Email</div>
+                    <div class="step-status"></div>
+                </div>
+            </div>
+
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+
+            <p class="progress-message" id="progress-message">Starting analysis...</p>
+        </div>
+
+        <div class="complete-state" id="complete-state" style="display: none;">
+            <div class="success-icon">✅</div>
+            <h2>Analysis Complete!</h2>
+            <p>Your coaching report has been sent to <strong>{{ job.user_email }}</strong></p>
+            <div class="action-buttons">
+                <a href="{{ url_for('report', job_id=job.id) }}" class="btn btn-primary">View Report</a>
+                <a href="{{ url_for('upload') }}" class="btn btn-outline">Analyze Another Call</a>
+            </div>
+        </div>
+
+        <div class="error-state" id="error-state" style="display: none;">
+            <div class="error-icon">❌</div>
+            <h2>Analysis Failed</h2>
+            <p class="error-message" id="error-message"></p>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary">Try Again</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const jobId = "{{ job.id }}";
+const steps = ['transcribing', 'analyzing', 'generating_pdf', 'sending_email'];
+let currentStep = 0;
+let started = false;
+
+const progressFill = document.getElementById('progress-fill');
+const progressMessage = document.getElementById('progress-message');
+const completeState = document.getElementById('complete-state');
+const errorState = document.getElementById('error-state');
+const errorMessage = document.getElementById('error-message');
+
+const statusMessages = {
+    'pending': 'Starting analysis...',
+    'transcribing': 'Transcribing audio and redacting PII...',
+    'analyzing': 'AI is reviewing the conversation...',
+    'generating_pdf': 'Creating your coaching reports...',
+    'sending_email': 'Sending reports to your email...',
+    'complete': 'All done!',
+    'error': 'Something went wrong'
+};
+
+function updateUI(status) {
+    progressMessage.textContent = statusMessages[status] || status;
+    
+    // Update steps
+    const stepIndex = steps.indexOf(status);
+    steps.forEach((step, i) => {
+        const el = document.getElementById('step-' + step);
+        if (!el) return;
+        
+        el.classList.remove('active', 'complete');
+        if (i < stepIndex) {
+            el.classList.add('complete');
+        } else if (i === stepIndex) {
+            el.classList.add('active');
+        }
+    });
+    
+    // Update progress bar
+    const progress = status === 'complete' ? 100 : 
+                     stepIndex >= 0 ? ((stepIndex + 1) / steps.length) * 100 : 0;
+    progressFill.style.width = progress + '%';
+}
+
+function showComplete() {
+    document.querySelector('.progress-container').style.display = 'none';
+    completeState.style.display = 'block';
+}
+
+function showError(msg) {
+    document.querySelector('.progress-container').style.display = 'none';
+    errorMessage.textContent = msg;
+    errorState.style.display = 'block';
+}
+
+async function startAnalysis() {
+    if (started) return;
+    started = true;
+    
+    try {
+        const response = await fetch(`/api/analyze/${jobId}`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.status === 'complete') {
+            updateUI('complete');
+            showComplete();
+        } else if (data.status === 'error') {
+            showError(data.error || 'Unknown error');
+        }
+    } catch (e) {
+        showError('Connection error. Please try again.');
+    }
+}
+
+async function checkStatus() {
+    try {
+        const response = await fetch(`/api/status/${jobId}`);
+        const data = await response.json();
+        
+        if (data.status === 'complete') {
+            updateUI('complete');
+            showComplete();
+            return;
+        } else if (data.status === 'error') {
+            showError(data.error || 'Unknown error');
+            return;
+        } else if (data.status !== 'pending') {
+            updateUI(data.status);
+        }
+        
+        // Keep polling
+        setTimeout(checkStatus, 1000);
+    } catch (e) {
+        console.error('Status check failed', e);
+        setTimeout(checkStatus, 2000);
+    }
+}
+
+// Start analysis immediately
+startAnalysis();
+
+// Also poll for status updates (in case of long processing)
+setTimeout(checkStatus, 2000);
+</script>
+{% endblock %}
+

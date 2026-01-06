@@ -1,0 +1,8 @@
+{
+  "emails": [
+    "trainer@example.com",
+    "coach@example.com"
+  ],
+  "_comment": "Add authorized trainer emails here. Or set ALLOWED_EMAILS env var."
+}
+
