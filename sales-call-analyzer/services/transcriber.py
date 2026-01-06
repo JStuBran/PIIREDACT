@@ -1,17 +1,9 @@
 """Transcriber service - Whisper + Presidio PII redaction."""
 
 import logging
-import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Try to import from installed package first, fallback to local path for development
-try:
-    from presidio_audio_redactor import AudioRedactor
-except ImportError:
-    # Development fallback - add local path
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent / "presidio-audio-redactor"))
-    from presidio_audio_redactor import AudioRedactor
+from presidio_audio_redactor import AudioRedactor
 
 logger = logging.getLogger(__name__)
 
