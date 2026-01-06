@@ -129,6 +129,10 @@ async function startAnalysis() {
         if (data.status === 'complete') {
             updateUI('complete');
             showComplete();
+        } else if (data.status === 'processing') {
+            // Background processing started, poll for updates
+            updateUI('transcribing');
+            setTimeout(checkStatus, 1000);
         } else if (data.status === 'error') {
             showError(data.error || 'Unknown error');
         }

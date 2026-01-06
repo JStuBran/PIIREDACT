@@ -29,7 +29,9 @@ class Config:
         return missing
     
     # Whisper
-    WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
+    # Default to 'tiny' for speed (3-5x faster than 'base')
+    # Use 'base' or larger for better accuracy
+    WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny")
     
     # Email - SMTP
     SMTP_HOST = os.environ.get("SMTP_HOST")

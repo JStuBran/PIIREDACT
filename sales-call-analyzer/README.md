@@ -159,7 +159,7 @@ Recommended settings:
 | `SECRET_KEY` | Yes | - | Flask secret key |
 | `OPENAI_API_KEY` | Yes | - | OpenAI API key |
 | `OPENAI_MODEL` | No | `gpt-4o` | OpenAI model |
-| `WHISPER_MODEL` | No | `base` | Whisper model size |
+| `WHISPER_MODEL` | No | `tiny` | Whisper model size (tiny=fast, base=balanced) |
 | `RESEND_API_KEY` | * | - | Resend API key |
 | `SMTP_HOST` | * | - | SMTP server host |
 | `SMTP_USER` | * | - | SMTP username |
@@ -171,13 +171,15 @@ Recommended settings:
 
 ## Whisper Models
 
-| Model | Size | Speed | Accuracy | RAM |
-|-------|------|-------|----------|-----|
-| tiny | 39M | Fastest | Basic | ~1GB |
-| base | 74M | Fast | Good | ~1GB |
-| small | 244M | Medium | Better | ~2GB |
-| medium | 769M | Slow | Great | ~5GB |
-| large | 1550M | Slowest | Best | ~10GB |
+| Model | Size | Speed | Accuracy | RAM | Recommended For |
+|-------|------|-------|----------|-----|----------------|
+| tiny | 39M | ~10x real-time | Basic | ~1GB | **Speed priority** |
+| base | 74M | ~2-3x real-time | Good | ~1GB | Balanced (default) |
+| small | 244M | ~1x real-time | Better | ~2GB | Accuracy priority |
+| medium | 769M | Slower | Great | ~5GB | High accuracy |
+| large | 1550M | Slowest | Best | ~10GB | Maximum accuracy |
+
+**Performance Tip**: For faster processing, use `WHISPER_MODEL=tiny`. It's 3-5x faster than `base` with slightly lower accuracy that's still excellent for sales calls.
 
 ## License
 

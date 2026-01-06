@@ -51,9 +51,14 @@ class AudioRedactor:
             Whisper transcription result dict with 'text', 'segments', and optionally 'words'
         """
         logger.debug(f"Transcribing audio file: {audio_path}")
+        # Optimize transcription settings for speed
         result = self.whisper_model.transcribe(
             audio_path,
             word_timestamps=word_timestamps,
+            fp16=False,  # CPU doesn't support FP16
+            verbose=False,  # Reduce logging overhead
+            # Use faster decoding (greedy instead of beam search for speed)
+            beam_size=1 if not word_timestamps else 5,  # Smaller beam = faster
         )
         logger.debug(f"Transcription complete. Length: {len(result.get('text', ''))}")
         return result

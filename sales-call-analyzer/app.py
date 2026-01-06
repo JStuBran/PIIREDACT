@@ -385,102 +385,33 @@ def api_analyze(job_id):
     if job["status"] != "pending":
         return jsonify({"error": "Job already processing or complete"}), 400
     
-    try:
-        # Step 1: Transcribe and redact
-        logger.info(f"[{job_id}] Starting transcription...")
-        db.update_call(job_id, status="transcribing")
-        
-        transcriber = get_transcriber()
-        transcription = transcriber.transcribe_and_redact(job["file_path"])
-        
-        # Step 2: Analyze with GPT-4o
-        logger.info(f"[{job_id}] Analyzing with GPT-4o...")
-        db.update_call(job_id, status="analyzing")
-        
-        analyzer = get_analyzer()
-        analysis = analyzer.analyze(
-            transcript=transcription["redacted_text"],
-            duration_min=transcription.get("duration_min", 0),
-        )
-        
-        # Step 3: Compute call stats
-        logger.info(f"[{job_id}] Computing call stats...")
-        stats = analyzer.compute_stats(transcription.get("segments", []))
-        
-        # Step 3.5: Enhanced analytics
-        logger.info(f"[{job_id}] Running enhanced analytics...")
-        analytics_service = get_analytics()
-        enhanced_analytics = analytics_service.analyze_call(
-            transcript=transcription["redacted_text"],
-            segments=transcription.get("segments", []),
-        )
-        
-        # Step 4: Generate PDFs
-        logger.info(f"[{job_id}] Generating PDFs...")
-        db.update_call(job_id, status="generating_pdf")
-        
-        pdf_generator = get_pdf_generator()
-        
-        coaching_pdf_path = os.path.join(
-            Config.UPLOAD_FOLDER,
-            f"{job_id}_coaching.pdf"
-        )
-        stats_pdf_path = os.path.join(
-            Config.UPLOAD_FOLDER,
-            f"{job_id}_stats.pdf"
-        )
-        
-        pdf_generator.generate_coaching_report(analysis, coaching_pdf_path)
-        pdf_generator.generate_stats_report(stats, stats_pdf_path)
-        
-        # Step 5: Send email
-        logger.info(f"[{job_id}] Sending email...")
-        db.update_call(job_id, status="sending_email")
-        
-        email_sender = get_email_sender()
-        email_sender.send_report(
-            to_email=job["user_email"],
-            subject=f"Call Analysis: {job['filename']}",
-            coaching_pdf_path=coaching_pdf_path,
-            stats_pdf_path=stats_pdf_path,
-        )
-        
-        # Save all data to database
-        # Merge enhanced analytics into stats
-        stats["enhanced_analytics"] = enhanced_analytics
-        
-        db.update_call(
-            job_id,
-            status="complete",
-            completed_at=datetime.utcnow().isoformat(),
-            transcription_json=transcription,
-            analysis_json=analysis,
-            stats_json=stats,
-            coaching_pdf_path=coaching_pdf_path,
-            stats_pdf_path=stats_pdf_path,
-        )
-        
-        # Clean up audio file
-        try:
-            os.unlink(job["file_path"])
-        except Exception:
-            pass
-        
-        logger.info(f"[{job_id}] Analysis complete!")
-        
-        return jsonify({
-            "status": "complete",
-            "message": "Analysis complete! Check your email.",
-        })
-        
-    except Exception as e:
-        logger.exception(f"[{job_id}] Analysis failed: {e}")
-        db.update_call(job_id, status="error", error=str(e))
-        
-        return jsonify({
-            "status": "error",
-            "error": str(e),
-        }), 500
+    # Start background processing
+    from services.background_processor import BackgroundProcessor
+    
+    processor = BackgroundProcessor()
+    services = {
+        "database": db,
+        "transcriber": get_transcriber(),
+        "analyzer": get_analyzer(),
+        "analytics": get_analytics(),
+        "pdf_generator": get_pdf_generator(),
+        "email_sender": get_email_sender(),
+    }
+    
+    processor.process_call_async(
+        job_id=job_id,
+        file_path=job["file_path"],
+        filename=job["filename"],
+        user_email=job["user_email"],
+        services=services,
+        config=Config,
+    )
+    
+    # Return immediately - processing happens in background
+    return jsonify({
+        "status": "processing",
+        "message": "Analysis started. This page will update automatically.",
+    })
 
 
 @app.route("/api/status/<job_id>")

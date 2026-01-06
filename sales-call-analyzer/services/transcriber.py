@@ -62,39 +62,100 @@ class TranscriberService:
             duration_sec = last_segment.get("end", 0)
 
         # Parse segments into a cleaner format with speaker diarization
-        parsed_segments = self._parse_segments(segments)
+        # IMPORTANT: Redact segment text to prevent PII exposure
+        original_text = result.get("original_text", "")
+        redacted_text = result.get("redacted_text", "")
+        parsed_segments = self._parse_segments(
+            segments,
+            original_text=original_text,
+            redacted_text=redacted_text,
+        )
 
         return {
-            "original_text": result.get("original_text", ""),
-            "redacted_text": result.get("redacted_text", ""),
+            "original_text": original_text,  # Keep for internal use only
+            "redacted_text": redacted_text,
             "pii_findings": result.get("pii_findings", []),
-            "segments": parsed_segments,
+            "segments": parsed_segments,  # Now contains redacted text
             "duration_sec": duration_sec,
             "duration_min": round(duration_sec / 60, 1),
         }
 
-    def _parse_segments(self, segments: List[Dict]) -> List[Dict[str, Any]]:
+    def _parse_segments(
+        self,
+        segments: List[Dict],
+        original_text: str = "",
+        redacted_text: str = "",
+    ) -> List[Dict[str, Any]]:
         """
-        Parse Whisper segments into a cleaner format.
+        Parse Whisper segments into a cleaner format with redacted text.
+        
+        SECURITY: This method ensures segment text is redacted to prevent PII exposure.
+        Each segment is redacted individually to ensure accuracy.
 
         Args:
-            segments: Raw segments from Whisper
+            segments: Raw segments from Whisper (contain unredacted text)
+            original_text: Full original transcript (for reference)
+            redacted_text: Full redacted transcript (for reference)
 
         Returns:
-            List of segment dicts with id, start, end, text
+            List of segment dicts with id, start, end, text (REDACTED)
         """
         parsed = []
+        
+        # CRITICAL: Redact each segment individually to prevent PII exposure
+        # We can't simply map from original_text to redacted_text because
+        # Presidio replacements may have different lengths (e.g., "<EMAIL>" vs actual email)
         for i, seg in enumerate(segments):
+            seg_text = seg.get("text", "").strip()
+            
+            # Redact this segment's text
+            if seg_text:
+                redacted_seg_text = self._redact_segment_text(seg_text)
+            else:
+                redacted_seg_text = ""
+            
             parsed.append({
                 "id": i,
                 "start": seg.get("start", 0),
                 "end": seg.get("end", 0),
-                "text": seg.get("text", "").strip(),
-                # Whisper doesn't do diarization, so we'll estimate speaker
-                # based on segment patterns (can be improved with pyannote)
-                "speaker": f"spk_{i % 2}",  # Alternate speakers as estimate
+                "text": redacted_seg_text,  # REDACTED text only
+                "speaker": f"spk_{i % 2}",
             })
+        
         return parsed
+
+    def _redact_segment_text(self, text: str) -> str:
+        """
+        Redact PII from a single segment's text.
+        
+        SECURITY: This ensures no PII leaks through segments.
+        
+        Args:
+            text: Segment text to redact
+            
+        Returns:
+            Redacted text
+        """
+        if not text:
+            return ""
+        
+        # Use the same redactor to redact this segment
+        # This ensures consistent redaction behavior
+        try:
+            pii_results = self.redactor.analyze(
+                text=text,
+                language="en",
+                score_threshold=0.4
+            )
+            anonymized = self.redactor.anonymize(
+                text=text,
+                analyzer_results=pii_results
+            )
+            return anonymized.text
+        except Exception as e:
+            # If redaction fails, log but return empty to be safe
+            logger.warning(f"Failed to redact segment text: {e}")
+            return ""  # Return empty rather than unredacted text
 
     def transcribe_only(self, audio_path: str) -> Dict[str, Any]:
         """

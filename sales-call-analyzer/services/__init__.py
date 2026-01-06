@@ -10,6 +10,7 @@ from .analytics import AnalyticsService
 from .annotations import AnnotationsService
 from .exporter import ExporterService
 from .benchmark import BenchmarkService
+from .background_processor import BackgroundProcessor
 
 __all__ = [
     "TranscriberService",
@@ -22,5 +23,6 @@ __all__ = [
     "AnnotationsService",
     "ExporterService",
     "BenchmarkService",
+    "BackgroundProcessor",
 ]
 

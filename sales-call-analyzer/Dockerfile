@@ -3,7 +3,7 @@
 FROM python:3.11-slim
 
 # Build args
-ARG WHISPER_MODEL=base
+ARG WHISPER_MODEL=tiny
 
 # Environment
 ENV PYTHONUNBUFFERED=1
@@ -59,12 +59,12 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Run with gunicorn
-# NOTE: Using 1 worker because job state is stored in-memory.
-# For multi-worker support, switch to Redis or database storage.
+# Using database storage, so multiple workers are safe
+# Increase workers for better concurrency (2-4 recommended for CPU-bound tasks)
 CMD gunicorn app:app \
     --bind 0.0.0.0:${PORT} \
-    --workers 1 \
+    --workers 2 \
     --threads 4 \
-    --timeout 300 \
+    --timeout 600 \
     --access-logfile - \
     --error-logfile -
