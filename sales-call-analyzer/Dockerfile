@@ -59,9 +59,11 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Run with gunicorn
+# NOTE: Using 1 worker because job state is stored in-memory.
+# For multi-worker support, switch to Redis or database storage.
 CMD gunicorn app:app \
     --bind 0.0.0.0:${PORT} \
-    --workers 2 \
+    --workers 1 \
     --threads 4 \
     --timeout 300 \
     --access-logfile - \
