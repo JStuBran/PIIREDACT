@@ -141,3 +141,6 @@ mkdocs/
 # Visual Studio
 /.vs
 /TestResults
+
+# Audio samples (may contain PII)
+presidio-audio-redactor/samples/
