@@ -1,4 +1,5 @@
 # Sales Call Analyzer - Production Dockerfile
+# Build context should be the repo root: docker build -f sales-call-analyzer/Dockerfile .
 FROM python:3.11-slim
 
 # Build args
@@ -28,10 +29,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create app directory
 WORKDIR /app
 
-# Install Python dependencies
-COPY requirements.txt .
+# Copy and install presidio-audio-redactor first (local package)
+COPY presidio-audio-redactor /app/presidio-audio-redactor
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install /app/presidio-audio-redactor
+
+# Install sales-call-analyzer dependencies
+COPY sales-call-analyzer/requirements.txt .
+RUN pip install -r requirements.txt
 
 # Download Whisper model at build time (to avoid download on first request)
 RUN python -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
@@ -40,7 +45,7 @@ RUN python -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
 RUN python -m spacy download en_core_web_lg
 
 # Copy application code
-COPY . .
+COPY sales-call-analyzer/ .
 
 # Create upload directory
 RUN mkdir -p /tmp/sales-call-analyzer

@@ -77,8 +77,9 @@ Visit http://localhost:5000
 ### Docker
 
 ```bash
-# Build
-docker build -t sales-call-analyzer .
+# Build from repo root (required to include presidio-audio-redactor)
+cd presidio
+docker build -f sales-call-analyzer/Dockerfile -t sales-call-analyzer .
 
 # Run
 docker run -p 8080:8080 \
@@ -88,12 +89,27 @@ docker run -p 8080:8080 \
   sales-call-analyzer
 ```
 
-### Railway / Render / Fly.io
+### Railway
+
+The repo includes a `railway.toml` at the root that configures the build correctly.
+
+1. Create a new project on Railway
+2. Connect your GitHub repo (point to the repo root, not a subdirectory)
+3. Set environment variables:
+   - `SECRET_KEY`
+   - `OPENAI_API_KEY`
+   - `RESEND_API_KEY` (or SMTP settings)
+   - `APP_URL` (your Railway URL, e.g., `https://your-app.up.railway.app`)
+   - `ALLOWED_EMAILS` (optional whitelist)
+4. Deploy!
+
+### Render / Fly.io
 
 1. Create a new project
 2. Connect your repo
-3. Set environment variables
-4. Deploy!
+3. Set the Dockerfile path to `sales-call-analyzer/Dockerfile`
+4. Set environment variables
+5. Deploy!
 
 Recommended settings:
 - **Memory**: 2GB+ (Whisper needs RAM)
