@@ -21,8 +21,28 @@ from flask import (
 )
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from werkzeug.utils import secure_filename
+from collections import defaultdict
+import time
 
 from config import Config
+
+# Simple in-memory rate limiter (use Redis in production)
+_rate_limit_store = defaultdict(list)
+RATE_LIMIT_WINDOW = 300  # 5 minutes
+RATE_LIMIT_MAX_REQUESTS = 5  # Max requests per window
+
+
+def check_rate_limit(key: str) -> bool:
+    """Check if rate limit exceeded. Returns True if OK, False if limited."""
+    now = time.time()
+    # Clean old entries
+    _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < RATE_LIMIT_WINDOW]
+    
+    if len(_rate_limit_store[key]) >= RATE_LIMIT_MAX_REQUESTS:
+        return False
+    
+    _rate_limit_store[key].append(now)
+    return True
 from services import (
     TranscriberService,
     AnalyzerService,
@@ -38,6 +58,21 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
+
+# Security settings
+app.config["SESSION_COOKIE_SECURE"] = True  # Only send cookies over HTTPS
+app.config["SESSION_COOKIE_HTTPONLY"] = True  # Prevent JS access to cookies
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF protection
+
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 # Ensure upload folder exists
 os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
@@ -129,6 +164,12 @@ def login():
             flash("Please enter your email address.", "error")
             return render_template("login.html")
         
+        # Rate limit by IP to prevent enumeration/spam
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+        if not check_rate_limit(f"login:{client_ip}"):
+            flash("Too many login attempts. Please try again in a few minutes.", "error")
+            return render_template("login.html")
+        
         # Check whitelist
         if not Config.is_email_allowed(email):
             flash("This email is not authorized. Contact your administrator.", "error")
@@ -166,7 +207,10 @@ def auth(token):
             max_age=Config.MAGIC_LINK_EXPIRY_MINUTES * 60,
         )
         
-        # Create session
+        # Regenerate session to prevent session fixation
+        session.clear()
+        
+        # Create new session
         session["user_email"] = email
         session.permanent = True
         app.permanent_session_lifetime = timedelta(hours=24)
@@ -469,6 +513,12 @@ if __name__ == "__main__":
     Config.load_whitelist()
     logger.info(f"Loaded {len(Config.ALLOWED_EMAILS)} whitelisted emails")
     
-    # Run in debug mode for development
+    # Validate required configuration
+    missing = Config.validate_required_config()
+    if missing:
+        logger.warning(f"⚠️  Missing configuration: {', '.join(missing)}")
+        logger.warning("The app may not function correctly without these settings.")
+    
+    # Run in debug mode for development (DISABLE in production!)
     app.run(debug=True, host="0.0.0.0", port=5000)
 

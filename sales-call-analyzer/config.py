@@ -7,12 +7,26 @@ from typing import List
 class Config:
     """Application configuration from environment variables."""
 
-    # Flask
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+    # Flask - SECRET_KEY is required in production
+    SECRET_KEY = os.environ.get("SECRET_KEY")
+    if not SECRET_KEY:
+        import warnings
+        warnings.warn("SECRET_KEY not set! Using insecure default for development only.")
+        SECRET_KEY = "dev-secret-key-DO-NOT-USE-IN-PRODUCTION"
     
-    # OpenAI
+    # OpenAI - required for analysis
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    
+    @classmethod
+    def validate_required_config(cls) -> list:
+        """Check for required configuration and return list of missing items."""
+        missing = []
+        if not cls.OPENAI_API_KEY:
+            missing.append("OPENAI_API_KEY")
+        if cls.SECRET_KEY and "DO-NOT-USE" in cls.SECRET_KEY:
+            missing.append("SECRET_KEY (using insecure default)")
+        return missing
     
     # Whisper
     WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
@@ -65,9 +79,14 @@ class Config:
         if not cls.ALLOWED_EMAILS:
             cls.load_whitelist()
         
-        # If no whitelist configured, allow all (dev mode)
+        # If no whitelist configured, deny all in production (require explicit config)
         if not cls.ALLOWED_EMAILS:
-            return True
+            import warnings
+            warnings.warn("ALLOWED_EMAILS not configured! Set ALLOWED_EMAILS env var or whitelist.json")
+            # In strict mode (production), deny all. Set ALLOW_ALL_EMAILS=true to override.
+            if os.environ.get("ALLOW_ALL_EMAILS", "").lower() == "true":
+                return True
+            return False
         
         return email.lower().strip() in cls.ALLOWED_EMAILS
 
