@@ -15,6 +15,10 @@
             </div>
             <div class="nav-links">
                 {% if session.get('user_email') %}
+                    <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+                    <a href="{{ url_for('team') }}" class="nav-link">Team</a>
+                    <a href="{{ url_for('history') }}" class="nav-link">History</a>
+                    <a href="{{ url_for('upload') }}" class="nav-link">Upload</a>
                     <span class="user-email">{{ session.user_email }}</span>
                     <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline">Logout</a>
                 {% endif %}

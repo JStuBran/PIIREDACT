@@ -136,6 +136,39 @@ footer {
     margin-top: 16px;
 }
 
+.transcript-segments {
+    margin-top: 16px;
+}
+.transcript-segment {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--line);
+}
+.transcript-segment:last-child {
+    border-bottom: none;
+}
+.segment-header {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.segment-time {
+    font-weight: 600;
+}
+.segment-speaker {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.segment-text {
+    line-height: 1.6;
+}
+.transcript-full {
+    line-height: 1.8;
+    white-space: pre-wrap;
+}
+
 @page { margin: 0.5in; }
 @media print {
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -417,6 +450,97 @@ class PDFGeneratorService:
         </body>
         </html>
         """
+
+    def generate_transcript_pdf(
+        self,
+        job: Dict[str, Any],
+        transcription: Dict[str, Any],
+        output_path: str,
+    ) -> str:
+        """
+        Generate transcript PDF.
+
+        Args:
+            job: Call job record
+            transcription: Transcription data
+            output_path: Path to save PDF
+
+        Returns:
+            Path to generated PDF
+        """
+        html_content = self._build_transcript_html(job, transcription)
+        
+        HTML(string=html_content).write_pdf(
+            output_path,
+            stylesheets=[CSS(string=BASE_CSS)],
+        )
+        
+        logger.info(f"Generated transcript PDF: {output_path}")
+        return output_path
+
+    def _build_transcript_html(self, job: Dict[str, Any], transcription: Dict[str, Any]) -> str:
+        """Build HTML for transcript PDF."""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        segments = transcription.get("segments", [])
+        redacted_text = transcription.get("redacted_text", "")
+        
+        # Build segments HTML
+        segments_html = ""
+        if segments:
+            segments_html = "<div class='transcript-segments'>"
+            for seg in segments:
+                start_time = self._format_timestamp(seg.get("start", 0))
+                text = self._esc(seg.get("text", ""))
+                speaker = seg.get("speaker", "spk_0")
+                
+                segments_html += f"""
+                <div class="transcript-segment">
+                    <div class="segment-header">
+                        <span class="segment-time">{start_time}</span>
+                        <span class="segment-speaker">{self._esc(speaker)}</span>
+                    </div>
+                    <div class="segment-text">{text}</div>
+                </div>
+                """
+            segments_html += "</div>"
+        else:
+            # Fallback to full text if no segments
+            segments_html = f"<div class='transcript-full'>{self._esc(redacted_text)}</div>"
+
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Transcript - {self._esc(job.get('filename', 'Call'))}</title>
+        </head>
+        <body>
+            <div class="container">
+                <header>
+                    <div>
+                        <h1>Call Transcript</h1>
+                        <div class="subtitle">{self._esc(job.get('filename', 'Call'))} &middot; {now}</div>
+                    </div>
+                </header>
+
+                <section>
+                    <h2>Transcript</h2>
+                    {segments_html}
+                </section>
+
+                <footer>
+                    Sales Call Analyzer · Generated {now}
+                </footer>
+            </div>
+        </body>
+        </html>
+        """
+
+    def _format_timestamp(self, seconds: float) -> str:
+        """Format seconds as MM:SS."""
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes:02d}:{secs:02d}"
 
     def _esc(self, text: Any) -> str:
         """Escape HTML special characters."""

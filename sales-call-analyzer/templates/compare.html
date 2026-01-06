@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Calls - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="compare">
+    <div class="compare-header">
+        <h1>Compare Calls</h1>
+        <a href="{{ url_for('history') }}" class="btn btn-outline">Back to History</a>
+    </div>
+
+    <!-- Calls Being Compared -->
+    <div class="calls-list">
+        <h3>Comparing {{ comparison.calls|length }} Calls</h3>
+        <div class="calls-grid">
+            {% for call in comparison.calls %}
+            <div class="call-card">
+                <div class="call-header">
+                    <span class="file-icon">🎙️</span>
+                    <div>
+                        <div class="call-filename">{{ call.filename }}</div>
+                        {% if call.rep_name %}
+                        <div class="call-rep">{{ call.rep_name }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="call-meta">
+                    <span class="text-muted">{{ call.created_at[:10] if call.created_at else '—' }}</span>
+                    <a href="{{ url_for('report', job_id=call.id) }}" class="btn-link">View Report</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Stats Comparison -->
+    {% if comparison.stats_comparison %}
+    <div class="comparison-section">
+        <h2>Statistics Comparison</h2>
+        <div class="stats-comparison-grid">
+            <div class="stat-comparison-card">
+                <div class="stat-label">Average Duration</div>
+                <div class="stat-value">{{ comparison.stats_comparison.avg_duration_min }} min</div>
+                <div class="stat-detail">
+                    Max: {{ comparison.stats_comparison.max_duration_call or '—' }}<br>
+                    Min: {{ comparison.stats_comparison.min_duration_call or '—' }}
+                </div>
+            </div>
+
+            <div class="stat-comparison-card">
+                <div class="stat-label">Average Talk Ratio</div>
+                <div class="stat-value">{{ comparison.stats_comparison.avg_talk_ratio_pct }}%</div>
+                <div class="stat-detail">
+                    Agent talk time share
+                </div>
+            </div>
+
+            <div class="stat-comparison-card">
+                <div class="stat-label">Average Questions</div>
+                <div class="stat-value">{{ comparison.stats_comparison.avg_questions }}</div>
+                <div class="stat-detail">
+                    Questions per call
+                </div>
+            </div>
+
+            <div class="stat-comparison-card">
+                <div class="stat-label">Average Filler Words</div>
+                <div class="stat-value">{{ comparison.stats_comparison.avg_filler_words }}</div>
+                <div class="stat-detail">
+                    Filler words per call
+                </div>
+            </div>
+        </div>
+
+        <!-- Individual Call Stats -->
+        <div class="individual-stats">
+            <h3>Individual Call Stats</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Call</th>
+                        <th>Duration (min)</th>
+                        <th>Talk Ratio (%)</th>
+                        <th>Questions</th>
+                        <th>Filler Words</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for call in comparison.calls %}
+                    <tr>
+                        <td>
+                            <div class="file-cell">
+                                <span class="file-icon">🎙️</span>
+                                <span>{{ call.filename }}</span>
+                            </div>
+                        </td>
+                        <td>{{ comparison.stats_comparison.durations[loop.index0] }}</td>
+                        <td>{{ comparison.stats_comparison.talk_ratios[loop.index0] }}%</td>
+                        <td>{{ comparison.stats_comparison.questions[loop.index0] }}</td>
+                        <td>{{ comparison.stats_comparison.filler_words[loop.index0] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Analysis Comparison -->
+    {% if comparison.analysis_comparison %}
+    <div class="comparison-section">
+        <h2>Analysis Highlights</h2>
+        <div class="analysis-grid">
+            <div class="analysis-card">
+                <h3>Common Focus Area</h3>
+                <p class="focus-text">
+                    {{ comparison.analysis_comparison.common_focus or 'None identified' }}
+                </p>
+            </div>
+
+            <div class="analysis-card">
+                <h3>Objections Summary</h3>
+                {% if comparison.analysis_comparison.objection_summary %}
+                <ul class="objection-list">
+                    {% for objection, count in comparison.analysis_comparison.objection_summary.items() %}
+                    <li>{{ objection }} ({{ count }}x)</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted">No objections identified</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if comparison.analysis_comparison.unique_highlights %}
+        <div class="highlights-section">
+            <h3>Key Highlights</h3>
+            <ul class="highlights-list">
+                {% for highlight in comparison.analysis_comparison.unique_highlights %}
+                <li>{{ highlight }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if comparison.analysis_comparison.unique_improvements %}
+        <div class="improvements-section">
+            <h3>Common Improvement Areas</h3>
+            <ul class="improvements-list">
+                {% for improvement in comparison.analysis_comparison.unique_improvements %}
+                <li>{{ improvement }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Trends (if 3+ calls) -->
+    {% if comparison.trends %}
+    <div class="comparison-section">
+        <h2>Trends Over Time</h2>
+        <div class="trends-grid">
+            <div class="trend-card">
+                <div class="trend-label">Duration Trend</div>
+                <div class="trend-value trend-{{ comparison.trends.duration_trend }}">
+                    {{ comparison.trends.duration_trend }}
+                </div>
+            </div>
+            <div class="trend-card">
+                <div class="trend-label">Talk Ratio Trend</div>
+                <div class="trend-value trend-{{ comparison.trends.talk_ratio_trend }}">
+                    {{ comparison.trends.talk_ratio_trend }}
+                </div>
+            </div>
+            <div class="trend-card">
+                <div class="trend-label">Questions Trend</div>
+                <div class="trend-value trend-{{ comparison.trends.questions_trend }}">
+                    {{ comparison.trends.questions_trend }}
+                </div>
+            </div>
+            <div class="trend-card">
+                <div class="trend-label">Filler Words Trend</div>
+                <div class="trend-value trend-{{ comparison.trends.filler_trend }}">
+                    {{ comparison.trends.filler_trend }}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.compare {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.compare-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+}
+
+.compare-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+}
+
+.calls-list {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.calls-list h3 {
+    font-size: 18px;
+    margin-bottom: 16px;
+}
+
+.calls-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+}
+
+.call-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+}
+
+.call-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.call-filename {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.call-rep {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.call-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.comparison-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.comparison-section h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.comparison-section h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.stats-comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.stat-comparison-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 20px;
+}
+
+.stat-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.stat-detail {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.individual-stats {
+    margin-top: 32px;
+}
+
+.comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.comparison-table th {
+    text-align: left;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 2px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.comparison-table td {
+    padding: 16px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.comparison-table tr:last-child td {
+    border-bottom: none;
+}
+
+.analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.analysis-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 20px;
+}
+
+.analysis-card h3 {
+    font-size: 16px;
+    margin-bottom: 12px;
+}
+
+.focus-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.objection-list,
+.highlights-list,
+.improvements-list {
+    list-style: none;
+    padding: 0;
+}
+
+.objection-list li,
+.highlights-list li,
+.improvements-list li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.objection-list li:last-child,
+.highlights-list li:last-child,
+.improvements-list li:last-child {
+    border-bottom: none;
+}
+
+.highlights-section,
+.improvements-section {
+    margin-top: 24px;
+}
+
+.trends-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.trend-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 20px;
+    text-align: center;
+}
+
+.trend-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.trend-value {
+    font-size: 24px;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.trend-improving {
+    color: var(--success);
+}
+
+.trend-declining {
+    color: var(--error);
+}
+
+.trend-stable {
+    color: var(--text-muted);
+}
+
+.file-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-icon {
+    font-size: 18px;
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.btn-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+</style>
+{% endblock %}
+

@@ -14,15 +14,16 @@
             <div class="dropzone" id="dropzone">
                 <div class="dropzone-content">
                     <div class="dropzone-icon">🎙️</div>
-                    <p class="dropzone-text">Drag & drop your audio file here</p>
-                    <p class="dropzone-hint">or click to browse</p>
-                    <p class="dropzone-formats">MP3, WAV, M4A, OGG, FLAC, WebM (max 100MB)</p>
+                    <p class="dropzone-text">Drag & drop your audio file(s) here</p>
+                    <p class="dropzone-hint">or click to browse (multiple files supported)</p>
+                    <p class="dropzone-formats">MP3, WAV, M4A, OGG, FLAC, WebM (max 100MB each)</p>
                 </div>
                 <input 
                     type="file" 
                     id="audio" 
                     name="audio" 
                     accept=".mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4"
+                    multiple
                     required
                     hidden
                 >
@@ -35,6 +36,18 @@
                     <span class="file-size" id="file-size"></span>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline" id="clear-file">Remove</button>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px;">
+                <label for="rep_name" class="form-label">Rep Name (Optional)</label>
+                <input 
+                    type="text" 
+                    id="rep_name" 
+                    name="rep_name" 
+                    class="form-input" 
+                    placeholder="e.g., John Smith"
+                >
+                <small class="form-hint">Assign this call to a specific sales rep for tracking</small>
             </div>
 
             <button type="submit" class="btn btn-primary btn-full" id="submit-btn" disabled>
@@ -96,9 +109,16 @@ fileInput.addEventListener('change', updateFilePreview);
 
 function updateFilePreview() {
     if (fileInput.files.length) {
-        const file = fileInput.files[0];
-        fileName.textContent = file.name;
-        fileSize.textContent = formatBytes(file.size);
+        const files = Array.from(fileInput.files);
+        if (files.length === 1) {
+            const file = files[0];
+            fileName.textContent = file.name;
+            fileSize.textContent = formatBytes(file.size);
+        } else {
+            fileName.textContent = `${files.length} files selected`;
+            const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+            fileSize.textContent = formatBytes(totalSize);
+        }
         filePreview.style.display = 'flex';
         dropzone.style.display = 'none';
         submitBtn.disabled = false;

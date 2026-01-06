@@ -51,6 +51,9 @@ class Config:
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/tmp/sales-call-analyzer")
     ALLOWED_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "flac", "webm", "mp4"}
     
+    # Database
+    DATABASE_PATH = os.environ.get("DATABASE_PATH", "sales_calls.db")
+    
     # App URL (for magic links)
     APP_URL = os.environ.get("APP_URL", "http://localhost:5000")
 

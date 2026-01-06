@@ -10,6 +10,7 @@
             <p class="subtitle">{{ job.filename }} &middot; {{ job.completed_at[:10] if job.completed_at else '' }}</p>
         </div>
         <div class="report-actions">
+            <a href="{{ url_for('transcript', job_id=job.id) }}" class="btn btn-outline">📝 View Transcript</a>
             <a href="{{ url_for('download', job_id=job.id, report_type='coaching') }}" class="btn btn-primary">
                 📄 Download Coaching PDF
             </a>
@@ -18,6 +19,39 @@
             </a>
         </div>
     </div>
+
+    <!-- Percentile Rankings -->
+    {% if rankings %}
+    <div class="rankings-section">
+        <h3>Your Performance vs Team</h3>
+        <div class="rankings-grid">
+            {% if rankings.duration_percentile is not none %}
+            <div class="ranking-item">
+                <div class="ranking-label">Duration</div>
+                <div class="ranking-value">{{ rankings.duration_percentile }}th percentile</div>
+            </div>
+            {% endif %}
+            {% if rankings.talk_ratio_percentile is not none %}
+            <div class="ranking-item">
+                <div class="ranking-label">Talk Ratio</div>
+                <div class="ranking-value">{{ rankings.talk_ratio_percentile }}th percentile</div>
+            </div>
+            {% endif %}
+            {% if rankings.questions_percentile is not none %}
+            <div class="ranking-item">
+                <div class="ranking-label">Questions</div>
+                <div class="ranking-value">{{ rankings.questions_percentile }}th percentile</div>
+            </div>
+            {% endif %}
+            {% if rankings.filler_percentile is not none %}
+            <div class="ranking-item">
+                <div class="ranking-label">Filler Words</div>
+                <div class="ranking-value">{{ rankings.filler_percentile }}th percentile</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <div class="report-grid">
         <!-- Overall Summary -->
@@ -125,5 +159,51 @@
         <a href="{{ url_for('upload') }}" class="btn btn-outline">← Analyze Another Call</a>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.rankings-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.rankings-section h3 {
+    font-size: 18px;
+    margin-bottom: 16px;
+}
+
+.rankings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.ranking-item {
+    background: var(--bg);
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    text-align: center;
+}
+
+.ranking-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ranking-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--primary);
+}
+</style>
 {% endblock %}
 

@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+
+{% block title %}Transcript - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="transcript-container">
+    <div class="transcript-header">
+        <div>
+            <h1>Call Transcript</h1>
+            <p class="subtitle">{{ job.filename }}</p>
+        </div>
+        <div class="transcript-actions">
+            <a href="{{ url_for('report', job_id=job.id) }}" class="btn btn-outline">View Report</a>
+            <a href="{{ url_for('export_transcript', job_id=job.id, type='text') }}" class="btn btn-outline">Export TXT</a>
+            <a href="{{ url_for('export_transcript', job_id=job.id, type='pdf') }}" class="btn btn-outline">Export PDF</a>
+            <a href="{{ url_for('export_srt', job_id=job.id) }}" class="btn btn-outline">Export SRT</a>
+        </div>
+    </div>
+
+    <!-- Search and Controls -->
+    <div class="transcript-controls">
+        <div class="search-box">
+            <input 
+                type="text" 
+                id="search-input" 
+                placeholder="Search transcript..."
+                class="form-input"
+            >
+            <button type="button" id="search-prev" class="btn btn-sm btn-outline" disabled>↑ Prev</button>
+            <button type="button" id="search-next" class="btn btn-sm btn-outline" disabled>↓ Next</button>
+            <span id="search-results" class="search-results"></span>
+        </div>
+        <div class="view-options">
+            <label>
+                <input type="checkbox" id="show-pii" checked> Highlight PII
+            </label>
+            <label>
+                <input type="checkbox" id="show-timestamps" checked> Show Timestamps
+            </label>
+            <label>
+                <input type="checkbox" id="show-speakers" checked> Show Speakers
+            </label>
+        </div>
+    </div>
+
+    <!-- Transcript Content -->
+    <div class="transcript-content" id="transcript-content">
+        {% if segments %}
+            {% for segment in segments %}
+            <div 
+                class="transcript-segment" 
+                data-start="{{ segment.start }}" 
+                data-end="{{ segment.end }}"
+                data-segment-id="{{ segment.id }}"
+            >
+                <div class="segment-header">
+                    {% if segment.start is defined and segment.start is not none %}
+                    <button 
+                        class="timestamp-link" 
+                        data-time="{{ segment.start }}"
+                        title="Click to jump to {{ segment.start|int }}s"
+                    >
+                        {% set minutes = (segment.start // 60)|int %}
+                        {% set seconds = (segment.start % 60)|int %}
+                        {{ minutes }}:{{ "%02d"|format(seconds) }}
+                    </button>
+                    {% endif %}
+                    {% if segment.speaker %}
+                    <span class="speaker-label">{{ segment.speaker }}</span>
+                    {% endif %}
+                </div>
+                <div class="segment-text" data-text="{{ segment.text|lower }}">
+                    {{ segment.text }}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <!-- Fallback to full text if no segments -->
+            <div class="transcript-full">
+                {{ redacted_text }}
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Timestamp Highlights from Analysis -->
+    {% if timestamp_highlights %}
+    <div class="timestamp-highlights">
+        <h3>Key Moments</h3>
+        <ul>
+            {% for highlight in timestamp_highlights %}
+            <li class="highlight-item">{{ highlight }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Transcript data
+const segments = {{ segments|tojson }};
+const piiFindings = {{ pii_findings|tojson }};
+const timestampHighlights = {{ timestamp_highlights|tojson }};
+
+// Search functionality
+let currentSearchIndex = -1;
+let searchMatches = [];
+
+const searchInput = document.getElementById('search-input');
+const searchPrev = document.getElementById('search-prev');
+const searchNext = document.getElementById('search-next');
+const searchResults = document.getElementById('search-results');
+const transcriptContent = document.getElementById('transcript-content');
+
+searchInput.addEventListener('input', function() {
+    const query = this.value.toLowerCase().trim();
+    
+    if (query.length < 2) {
+        searchMatches = [];
+        currentSearchIndex = -1;
+        clearHighlights();
+        updateSearchUI();
+        return;
+    }
+    
+    // Find all matches
+    searchMatches = [];
+    const segmentElements = document.querySelectorAll('.segment-text');
+    
+    segmentElements.forEach((el, idx) => {
+        const text = el.textContent.toLowerCase();
+        const segmentText = el.textContent;
+        let index = text.indexOf(query);
+        
+        while (index !== -1) {
+            searchMatches.push({
+                element: el,
+                index: index,
+                length: query.length,
+                segmentIndex: idx,
+            });
+            index = text.indexOf(query, index + 1);
+        }
+    });
+    
+    if (searchMatches.length > 0) {
+        currentSearchIndex = 0;
+        highlightSearchMatches();
+        scrollToMatch(0);
+    } else {
+        currentSearchIndex = -1;
+        clearHighlights();
+    }
+    
+    updateSearchUI();
+});
+
+function highlightSearchMatches() {
+    clearHighlights();
+    
+    searchMatches.forEach((match, idx) => {
+        const el = match.element;
+        const text = el.textContent;
+        const query = searchInput.value.toLowerCase().trim();
+        const start = match.index;
+        const end = start + match.length;
+        
+        // Create highlighted version
+        const before = text.substring(0, start);
+        const highlighted = text.substring(start, end);
+        const after = text.substring(end);
+        
+        el.innerHTML = `${escapeHtml(before)}<mark class="search-highlight ${idx === currentSearchIndex ? 'current' : ''}">${escapeHtml(highlighted)}</mark>${escapeHtml(after)}`;
+    });
+}
+
+function clearHighlights() {
+    const segmentElements = document.querySelectorAll('.segment-text');
+    segmentElements.forEach(el => {
+        // Restore original text (from data attribute if available, otherwise textContent)
+        const originalText = el.getAttribute('data-text') || el.textContent;
+        el.innerHTML = escapeHtml(originalText);
+    });
+}
+
+function scrollToMatch(index) {
+    if (index < 0 || index >= searchMatches.length) return;
+    
+    const match = searchMatches[index];
+    match.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    match.element.classList.add('search-scroll-target');
+    setTimeout(() => {
+        match.element.classList.remove('search-scroll-target');
+    }, 1000);
+}
+
+function updateSearchUI() {
+    if (searchMatches.length > 0) {
+        searchPrev.disabled = false;
+        searchNext.disabled = false;
+        searchResults.textContent = `${currentSearchIndex + 1} of ${searchMatches.length}`;
+    } else {
+        searchPrev.disabled = true;
+        searchNext.disabled = true;
+        searchResults.textContent = searchInput.value.trim() ? 'No matches' : '';
+    }
+}
+
+searchPrev.addEventListener('click', function() {
+    if (searchMatches.length === 0) return;
+    currentSearchIndex = (currentSearchIndex - 1 + searchMatches.length) % searchMatches.length;
+    highlightSearchMatches();
+    scrollToMatch(currentSearchIndex);
+    updateSearchUI();
+});
+
+searchNext.addEventListener('click', function() {
+    if (searchMatches.length === 0) return;
+    currentSearchIndex = (currentSearchIndex + 1) % searchMatches.length;
+    highlightSearchMatches();
+    scrollToMatch(currentSearchIndex);
+    updateSearchUI();
+});
+
+// Keyboard shortcuts
+searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+            searchPrev.click();
+        } else {
+            searchNext.click();
+        }
+    }
+});
+
+// Timestamp links
+document.querySelectorAll('.timestamp-link').forEach(link => {
+    link.addEventListener('click', function() {
+        const time = parseFloat(this.getAttribute('data-time'));
+        // Scroll to segment
+        const segment = this.closest('.transcript-segment');
+        segment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        segment.classList.add('timestamp-highlight');
+        setTimeout(() => {
+            segment.classList.remove('timestamp-highlight');
+        }, 2000);
+    });
+});
+
+// View options
+document.getElementById('show-timestamps').addEventListener('change', function() {
+    document.querySelectorAll('.timestamp-link').forEach(el => {
+        el.style.display = this.checked ? 'inline-block' : 'none';
+    });
+});
+
+document.getElementById('show-speakers').addEventListener('change', function() {
+    document.querySelectorAll('.speaker-label').forEach(el => {
+        el.style.display = this.checked ? 'inline-block' : 'none';
+    });
+});
+
+// PII highlighting (if we have PII findings data)
+if (piiFindings && piiFindings.length > 0 && document.getElementById('show-pii').checked) {
+    // Note: PII is already redacted in the text, but we could highlight the redacted portions
+    // For now, we'll just show a note about redactions
+}
+
+document.getElementById('show-pii').addEventListener('change', function() {
+    // Toggle PII highlighting if implemented
+});
+
+// Helper function
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+
+<style>
+.transcript-container {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.transcript-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.transcript-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.transcript-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.transcript-controls {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.search-box .form-input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+}
+
+.search-results {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.view-options {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.view-options label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.transcript-content {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    max-height: 70vh;
+    overflow-y: auto;
+    line-height: 1.8;
+}
+
+.transcript-segment {
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.transcript-segment:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.segment-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.timestamp-link {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.timestamp-link:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.speaker-label {
+    background: var(--bg);
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+}
+
+.segment-text {
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text);
+}
+
+.transcript-full {
+    white-space: pre-wrap;
+    font-size: 15px;
+    line-height: 1.8;
+}
+
+.search-highlight {
+    background: #fff3cd;
+    padding: 2px 0;
+    border-radius: 2px;
+}
+
+.search-highlight.current {
+    background: #ffc107;
+    font-weight: 600;
+}
+
+.search-scroll-target {
+    animation: highlight-pulse 1s ease-in-out;
+}
+
+@keyframes highlight-pulse {
+    0%, 100% { background: transparent; }
+    50% { background: rgba(15, 98, 254, 0.1); }
+}
+
+.timestamp-highlight {
+    animation: timestamp-pulse 2s ease-in-out;
+}
+
+@keyframes timestamp-pulse {
+    0%, 100% { background: transparent; }
+    50% { background: rgba(15, 98, 254, 0.15); }
+}
+
+.timestamp-highlights {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 24px;
+    box-shadow: var(--shadow);
+}
+
+.timestamp-highlights h3 {
+    font-size: 18px;
+    margin-bottom: 16px;
+}
+
+.timestamp-highlights ul {
+    list-style: none;
+    padding: 0;
+}
+
+.highlight-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    background: var(--bg);
+    border-left: 3px solid var(--primary);
+    border-radius: var(--radius-sm);
+}
+</style>
+{% endblock %}
+

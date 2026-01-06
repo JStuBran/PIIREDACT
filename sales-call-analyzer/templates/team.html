@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Team Dashboard - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="team-container">
+    <div class="team-header">
+        <h1>Team Dashboard</h1>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">+ Upload New Call</a>
+    </div>
+
+    {% if rep_stats %}
+    <div class="reps-grid">
+        {% for rep in rep_stats %}
+        <div class="rep-card">
+            <div class="rep-header">
+                <h2>{{ rep.name }}</h2>
+                <span class="rep-badge">{{ rep.total_calls }} calls</span>
+            </div>
+            
+            <div class="rep-metrics">
+                <div class="metric">
+                    <div class="metric-label">Avg Duration</div>
+                    <div class="metric-value">{{ rep.avg_duration }} min</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Avg Questions</div>
+                    <div class="metric-value">{{ rep.avg_questions }}</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Talk Ratio</div>
+                    <div class="metric-value">{{ rep.avg_talk_ratio }}%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Filler Words</div>
+                    <div class="metric-value">{{ rep.avg_filler }}</div>
+                </div>
+            </div>
+
+            <div class="rep-recent">
+                <h3>Recent Calls</h3>
+                {% if rep.recent_calls %}
+                <ul class="recent-calls-list">
+                    {% for call in rep.recent_calls %}
+                    <li>
+                        <a href="{{ url_for('report', job_id=call.id) }}" class="call-link">
+                            {{ call.filename }}
+                        </a>
+                        <span class="call-date">{{ call.created_at[:10] if call.created_at else '' }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted">No calls yet</p>
+                {% endif %}
+                <a href="{{ url_for('history', rep=rep.name) }}" class="btn-link">View All Calls →</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">👥</div>
+        <h3>No team data yet</h3>
+        <p>Start uploading calls and assign them to reps to see team performance.</p>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">Upload Call</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.team-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.team-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+}
+
+.team-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+}
+
+.reps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 24px;
+}
+
+.rep-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+}
+
+.rep-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--border);
+}
+
+.rep-header h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.rep-badge {
+    background: var(--primary);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.rep-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.metric {
+    background: var(--bg);
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+
+.metric-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metric-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.rep-recent h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.recent-calls-list {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 12px;
+}
+
+.recent-calls-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.recent-calls-list li:last-child {
+    border-bottom: none;
+}
+
+.call-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 14px;
+    flex: 1;
+}
+
+.call-link:hover {
+    text-decoration: underline;
+}
+
+.call-date {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.btn-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+</style>
+{% endblock %}
+

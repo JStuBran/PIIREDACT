@@ -10,6 +10,14 @@ A secure, self-hosted sales call analysis tool. Upload audio recordings, get PII
 - 📊 **Call Stats** - Talk time, questions, filler words, and more
 - 📄 **PDF Reports** - Professional coaching reports delivered via email
 - 🔐 **Email Auth** - Magic link login with email whitelist
+- 📈 **Dashboard & History** - View all calls, search, filter, and track progress
+- 👥 **Team Management** - Track multiple reps with performance summaries
+- 🔍 **Interactive Transcripts** - Search, navigate, and export transcripts
+- 📊 **Call Comparison** - Compare multiple calls side-by-side with trends
+- 📝 **Annotations** - Add notes to specific timestamps in calls
+- 📤 **Export Options** - CSV, JSON, PDF, TXT, and SRT subtitle exports
+- 🎯 **Benchmarking** - Team averages and percentile rankings
+- 🔬 **Enhanced Analytics** - Sentiment analysis, keyword detection, call structure
 
 ## Quick Start
 

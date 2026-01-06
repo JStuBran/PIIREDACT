@@ -23,3 +23,6 @@ resend>=0.7.0
 python-dotenv>=1.0.0
 itsdangerous>=2.1.0
 
+# Database
+# SQLite is built into Python, no extra package needed
+

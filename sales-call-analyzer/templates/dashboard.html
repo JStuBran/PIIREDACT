@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h1>Dashboard</h1>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">
+            <span>+</span> Upload New Call
+        </a>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Total Calls</div>
+            <div class="stat-value">{{ stats.total_calls }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Completed</div>
+            <div class="stat-value">{{ stats.completed_calls }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg Duration</div>
+            <div class="stat-value">{{ stats.avg_duration_min }} min</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg Questions</div>
+            <div class="stat-value">{{ stats.avg_questions }}</div>
+        </div>
+    </div>
+
+    <!-- Team Benchmarks -->
+    {% if benchmarks and benchmarks.total_calls > 0 %}
+    <div class="section">
+        <div class="section-header">
+            <h2>Team Benchmarks</h2>
+        </div>
+        <div class="benchmarks-grid">
+            <div class="benchmark-item">
+                <div class="benchmark-label">Avg Duration</div>
+                <div class="benchmark-value">{{ benchmarks.avg_duration }} min</div>
+                <div class="benchmark-median">Median: {{ benchmarks.median_duration }} min</div>
+            </div>
+            <div class="benchmark-item">
+                <div class="benchmark-label">Avg Talk Ratio</div>
+                <div class="benchmark-value">{{ benchmarks.avg_talk_ratio }}%</div>
+                <div class="benchmark-median">Median: {{ benchmarks.median_talk_ratio }}%</div>
+            </div>
+            <div class="benchmark-item">
+                <div class="benchmark-label">Avg Questions</div>
+                <div class="benchmark-value">{{ benchmarks.avg_questions }}</div>
+                <div class="benchmark-median">{{ benchmarks.avg_questions_per_min }}/min</div>
+            </div>
+            <div class="benchmark-item">
+                <div class="benchmark-label">Avg Filler Words</div>
+                <div class="benchmark-value">{{ benchmarks.avg_filler_words }}</div>
+                <div class="benchmark-median">Per call</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent Calls -->
+    <div class="section">
+        <div class="section-header">
+            <h2>Recent Calls</h2>
+            <a href="{{ url_for('history') }}" class="btn btn-sm btn-outline">View All</a>
+        </div>
+
+        {% if recent_calls %}
+        <div class="calls-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Rep</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for call in recent_calls %}
+                    <tr>
+                        <td>
+                            <div class="file-cell">
+                                <span class="file-icon">🎙️</span>
+                                <span class="file-name">{{ call.filename }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            {% if call.rep_name %}
+                                <span class="rep-badge">{{ call.rep_name }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="status-badge status-{{ call.status }}">
+                                {{ call.status }}
+                            </span>
+                        </td>
+                        <td class="text-muted">
+                            {{ call.created_at[:10] if call.created_at else '—' }}
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                {% if call.status == 'complete' %}
+                                    <a href="{{ url_for('report', job_id=call.id) }}" class="btn-link">Report</a>
+                                    <a href="{{ url_for('transcript', job_id=call.id) }}" class="btn-link">Transcript</a>
+                                {% elif call.status == 'error' %}
+                                    <span class="text-muted">Error</span>
+                                {% else %}
+                                    <a href="{{ url_for('process', job_id=call.id) }}" class="btn-link">Processing</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📞</div>
+            <h3>No calls yet</h3>
+            <p>Upload your first sales call to get started.</p>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary">Upload Call</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Reps Summary -->
+    {% if reps %}
+    <div class="section">
+        <div class="section-header">
+            <h2>Reps</h2>
+        </div>
+        <div class="reps-list">
+            {% for rep in reps %}
+            <div class="rep-card">
+                <span class="rep-name">{{ rep }}</span>
+                <a href="{{ url_for('history', rep=rep) }}" class="btn-link">View Calls</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.dashboard {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+}
+
+.dashboard-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+
+.stat-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.section-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.calls-table {
+    overflow-x: auto;
+}
+
+.calls-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.calls-table th {
+    text-align: left;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 2px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.calls-table td {
+    padding: 16px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.calls-table tr:last-child td {
+    border-bottom: none;
+}
+
+.file-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-icon {
+    font-size: 18px;
+}
+
+.file-name {
+    font-weight: 500;
+}
+
+.rep-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.status-complete {
+    background: #d1f2eb;
+    color: #0e7c5e;
+}
+
+.status-pending,
+.status-transcribing,
+.status-analyzing,
+.status-generating_pdf,
+.status-sending_email {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 12px;
+}
+
+.btn-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+
+.reps-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.rep-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.rep-name {
+    font-weight: 500;
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.benchmarks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.benchmark-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+}
+
+.benchmark-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.benchmark-value {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.benchmark-median {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+</style>
+{% endblock %}
+

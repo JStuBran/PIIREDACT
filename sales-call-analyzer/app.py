@@ -18,6 +18,7 @@ from flask import (
     session,
     jsonify,
     send_file,
+    Response,
 )
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from werkzeug.utils import secure_filename
@@ -48,6 +49,12 @@ from services import (
     AnalyzerService,
     PDFGeneratorService,
     EmailSenderService,
+    DatabaseService,
+    ComparisonService,
+    AnalyticsService,
+    AnnotationsService,
+    ExporterService,
+    BenchmarkService,
 )
 
 # Configure logging
@@ -80,14 +87,17 @@ os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
 # Token serializer for magic links
 serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
 
-# In-memory job storage (use Redis/DB in production)
-jobs = {}
-
 # Initialize services (lazy loading)
 _transcriber: Optional[TranscriberService] = None
 _analyzer: Optional[AnalyzerService] = None
 _pdf_generator: Optional[PDFGeneratorService] = None
 _email_sender: Optional[EmailSenderService] = None
+_database: Optional[DatabaseService] = None
+_comparison: Optional[ComparisonService] = None
+_analytics: Optional[AnalyticsService] = None
+_annotations: Optional[AnnotationsService] = None
+_exporter: Optional[ExporterService] = None
+_benchmark: Optional[BenchmarkService] = None
 
 
 def get_transcriber() -> TranscriberService:
@@ -125,6 +135,54 @@ def get_email_sender() -> EmailSenderService:
     return _email_sender
 
 
+def get_database() -> DatabaseService:
+    """Get or create database service."""
+    global _database
+    if _database is None:
+        _database = DatabaseService(db_path=Config.DATABASE_PATH)
+    return _database
+
+
+def get_comparison() -> ComparisonService:
+    """Get or create comparison service."""
+    global _comparison
+    if _comparison is None:
+        _comparison = ComparisonService()
+    return _comparison
+
+
+def get_analytics() -> AnalyticsService:
+    """Get or create analytics service."""
+    global _analytics
+    if _analytics is None:
+        _analytics = AnalyticsService()
+    return _analytics
+
+
+def get_annotations() -> AnnotationsService:
+    """Get or create annotations service."""
+    global _annotations
+    if _annotations is None:
+        _annotations = AnnotationsService(db_path=Config.DATABASE_PATH)
+    return _annotations
+
+
+def get_exporter() -> ExporterService:
+    """Get or create exporter service."""
+    global _exporter
+    if _exporter is None:
+        _exporter = ExporterService()
+    return _exporter
+
+
+def get_benchmark() -> BenchmarkService:
+    """Get or create benchmark service."""
+    global _benchmark
+    if _benchmark is None:
+        _benchmark = BenchmarkService()
+    return _benchmark
+
+
 def login_required(f):
     """Decorator to require authentication."""
     @wraps(f)
@@ -148,9 +206,9 @@ def allowed_file(filename: str) -> bool:
 
 @app.route("/")
 def index():
-    """Redirect to upload if logged in, otherwise login."""
+    """Redirect to dashboard if logged in, otherwise login."""
     if "user_email" in session:
-        return redirect(url_for("upload"))
+        return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
 
@@ -237,43 +295,57 @@ def logout():
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
 def upload():
-    """Upload page - drag and drop audio file."""
+    """Upload page - drag and drop audio file(s)."""
     if request.method == "POST":
-        # Check if file was uploaded
-        if "audio" not in request.files:
+        # Support both single file and multiple files
+        files = request.files.getlist("audio")
+        
+        if not files or all(f.filename == "" for f in files):
             flash("No audio file provided.", "error")
             return render_template("upload.html")
         
-        file = request.files["audio"]
+        # Get optional rep name from form
+        rep_name = request.form.get("rep_name", "").strip() or None
         
-        if file.filename == "":
-            flash("No file selected.", "error")
+        # Validate and save files
+        db = get_database()
+        job_ids = []
+        
+        for file in files:
+            if file.filename == "":
+                continue
+            
+            if not allowed_file(file.filename):
+                flash(f"Invalid file type: {file.filename}. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}", "error")
+                continue
+            
+            # Save file
+            job_id = str(uuid.uuid4())
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_{filename}")
+            file.save(file_path)
+            
+            # Create call record in database
+            db.create_call(
+                call_id=job_id,
+                filename=filename,
+                user_email=session["user_email"],
+                file_path=file_path,
+                rep_name=rep_name,
+            )
+            
+            job_ids.append(job_id)
+        
+        if not job_ids:
+            flash("No valid files uploaded.", "error")
             return render_template("upload.html")
         
-        if not allowed_file(file.filename):
-            flash(f"Invalid file type. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}", "error")
-            return render_template("upload.html")
-        
-        # Save file
-        job_id = str(uuid.uuid4())
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_{filename}")
-        file.save(file_path)
-        
-        # Create job
-        jobs[job_id] = {
-            "id": job_id,
-            "status": "pending",
-            "filename": filename,
-            "file_path": file_path,
-            "user_email": session["user_email"],
-            "created_at": datetime.utcnow().isoformat(),
-            "error": None,
-            "result": None,
-        }
-        
-        # Redirect to processing page
-        return redirect(url_for("process", job_id=job_id))
+        # If single file, redirect to processing. If multiple, redirect to batch view
+        if len(job_ids) == 1:
+            return redirect(url_for("process", job_id=job_ids[0]))
+        else:
+            flash(f"Uploaded {len(job_ids)} files. Processing will begin shortly.", "success")
+            return redirect(url_for("history"))
     
     return render_template("upload.html", user_email=session.get("user_email"))
 
@@ -282,7 +354,8 @@ def upload():
 @login_required
 def process(job_id):
     """Processing page - shows progress and triggers analysis."""
-    job = jobs.get(job_id)
+    db = get_database()
+    job = db.get_call(job_id)
     
     if not job:
         flash("Job not found.", "error")
@@ -300,7 +373,8 @@ def process(job_id):
 @login_required
 def api_analyze(job_id):
     """API endpoint to start analysis (called from processing page)."""
-    job = jobs.get(job_id)
+    db = get_database()
+    job = db.get_call(job_id)
     
     if not job:
         return jsonify({"error": "Job not found"}), 404
@@ -311,22 +385,17 @@ def api_analyze(job_id):
     if job["status"] != "pending":
         return jsonify({"error": "Job already processing or complete"}), 400
     
-    # Update status
-    job["status"] = "transcribing"
-    
     try:
         # Step 1: Transcribe and redact
         logger.info(f"[{job_id}] Starting transcription...")
-        job["status"] = "transcribing"
+        db.update_call(job_id, status="transcribing")
         
         transcriber = get_transcriber()
         transcription = transcriber.transcribe_and_redact(job["file_path"])
         
-        job["transcription"] = transcription
-        
         # Step 2: Analyze with GPT-4o
         logger.info(f"[{job_id}] Analyzing with GPT-4o...")
-        job["status"] = "analyzing"
+        db.update_call(job_id, status="analyzing")
         
         analyzer = get_analyzer()
         analysis = analyzer.analyze(
@@ -334,16 +403,21 @@ def api_analyze(job_id):
             duration_min=transcription.get("duration_min", 0),
         )
         
-        job["analysis"] = analysis
-        
         # Step 3: Compute call stats
         logger.info(f"[{job_id}] Computing call stats...")
         stats = analyzer.compute_stats(transcription.get("segments", []))
-        job["stats"] = stats
+        
+        # Step 3.5: Enhanced analytics
+        logger.info(f"[{job_id}] Running enhanced analytics...")
+        analytics_service = get_analytics()
+        enhanced_analytics = analytics_service.analyze_call(
+            transcript=transcription["redacted_text"],
+            segments=transcription.get("segments", []),
+        )
         
         # Step 4: Generate PDFs
         logger.info(f"[{job_id}] Generating PDFs...")
-        job["status"] = "generating_pdf"
+        db.update_call(job_id, status="generating_pdf")
         
         pdf_generator = get_pdf_generator()
         
@@ -359,12 +433,9 @@ def api_analyze(job_id):
         pdf_generator.generate_coaching_report(analysis, coaching_pdf_path)
         pdf_generator.generate_stats_report(stats, stats_pdf_path)
         
-        job["coaching_pdf"] = coaching_pdf_path
-        job["stats_pdf"] = stats_pdf_path
-        
         # Step 5: Send email
         logger.info(f"[{job_id}] Sending email...")
-        job["status"] = "sending_email"
+        db.update_call(job_id, status="sending_email")
         
         email_sender = get_email_sender()
         email_sender.send_report(
@@ -374,9 +445,20 @@ def api_analyze(job_id):
             stats_pdf_path=stats_pdf_path,
         )
         
-        # Done!
-        job["status"] = "complete"
-        job["completed_at"] = datetime.utcnow().isoformat()
+        # Save all data to database
+        # Merge enhanced analytics into stats
+        stats["enhanced_analytics"] = enhanced_analytics
+        
+        db.update_call(
+            job_id,
+            status="complete",
+            completed_at=datetime.utcnow().isoformat(),
+            transcription_json=transcription,
+            analysis_json=analysis,
+            stats_json=stats,
+            coaching_pdf_path=coaching_pdf_path,
+            stats_pdf_path=stats_pdf_path,
+        )
         
         # Clean up audio file
         try:
@@ -393,8 +475,7 @@ def api_analyze(job_id):
         
     except Exception as e:
         logger.exception(f"[{job_id}] Analysis failed: {e}")
-        job["status"] = "error"
-        job["error"] = str(e)
+        db.update_call(job_id, status="error", error=str(e))
         
         return jsonify({
             "status": "error",
@@ -406,7 +487,8 @@ def api_analyze(job_id):
 @login_required
 def api_status(job_id):
     """API endpoint to check job status."""
-    job = jobs.get(job_id)
+    db = get_database()
+    job = db.get_call(job_id)
     
     if not job:
         return jsonify({"error": "Job not found"}), 404
@@ -425,7 +507,8 @@ def api_status(job_id):
 @login_required
 def report(job_id):
     """View report in browser."""
-    job = jobs.get(job_id)
+    db = get_database()
+    job = db.get_call(job_id)
     
     if not job:
         flash("Job not found.", "error")
@@ -438,11 +521,23 @@ def report(job_id):
     if job["status"] != "complete":
         return redirect(url_for("process", job_id=job_id))
     
+    # Calculate benchmarks and percentile rankings
+    benchmark_service = get_benchmark()
+    all_calls = db.list_calls(
+        user_email=session["user_email"],
+        status="complete",
+        limit=1000,
+    )
+    benchmarks = benchmark_service.calculate_benchmarks(all_calls)
+    rankings = benchmark_service.rank_call(job, benchmarks, all_calls)
+    
     return render_template(
         "report.html",
         job=job,
-        analysis=job.get("analysis", {}),
-        stats=job.get("stats", {}),
+        analysis=job.get("analysis_json", {}),
+        stats=job.get("stats_json", {}),
+        benchmarks=benchmarks,
+        rankings=rankings,
     )
 
 
@@ -450,7 +545,8 @@ def report(job_id):
 @login_required
 def download(job_id, report_type):
     """Download PDF report."""
-    job = jobs.get(job_id)
+    db = get_database()
+    job = db.get_call(job_id)
     
     if not job:
         flash("Job not found.", "error")
@@ -461,10 +557,10 @@ def download(job_id, report_type):
         return redirect(url_for("upload"))
     
     if report_type == "coaching":
-        pdf_path = job.get("coaching_pdf")
+        pdf_path = job.get("coaching_pdf_path")
         filename = f"coaching_report_{job['filename']}.pdf"
     elif report_type == "stats":
-        pdf_path = job.get("stats_pdf")
+        pdf_path = job.get("stats_pdf_path")
         filename = f"call_stats_{job['filename']}.pdf"
     else:
         flash("Invalid report type.", "error")
@@ -479,6 +575,497 @@ def download(job_id, report_type):
         as_attachment=True,
         download_name=filename,
         mimetype="application/pdf",
+    )
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    """Dashboard showing recent calls and summary stats."""
+    db = get_database()
+    
+    # Get recent calls
+    recent_calls = db.list_calls(
+        user_email=session["user_email"],
+        limit=10,
+        order_by="created_at DESC",
+    )
+    
+    # Get summary stats
+    stats = db.get_summary_stats(user_email=session["user_email"])
+    
+    # Get list of reps
+    reps = db.get_reps(user_email=session["user_email"])
+    
+    # Calculate team benchmarks
+    benchmark_service = get_benchmark()
+    all_completed = db.list_calls(
+        user_email=session["user_email"],
+        status="complete",
+        limit=1000,
+    )
+    benchmarks = benchmark_service.calculate_benchmarks(all_completed)
+    
+    return render_template(
+        "dashboard.html",
+        recent_calls=recent_calls,
+        stats=stats,
+        reps=reps,
+        benchmarks=benchmarks,
+    )
+
+
+@app.route("/history")
+@login_required
+def history():
+    """Call history with pagination and filtering."""
+    db = get_database()
+    
+    # Get filters from query params
+    page = int(request.args.get("page", 1))
+    per_page = 20
+    rep_filter = request.args.get("rep", "")
+    status_filter = request.args.get("status", "")
+    search_query = request.args.get("search", "").strip()
+    
+    # Build filters
+    filters = {"user_email": session["user_email"]}
+    if rep_filter:
+        filters["rep_name"] = rep_filter
+    if status_filter:
+        filters["status"] = status_filter
+    
+    # Get calls
+    offset = (page - 1) * per_page
+    calls = db.list_calls(
+        limit=per_page,
+        offset=offset,
+        order_by="created_at DESC",
+        **filters,
+    )
+    
+    # Filter by search query if provided (full-text search in transcripts)
+    if search_query:
+        calls = db.search_transcripts(
+            query=search_query,
+            user_email=session["user_email"],
+            limit=per_page,
+            offset=offset,
+        )
+        # Re-apply other filters
+        if rep_filter:
+            calls = [c for c in calls if c.get("rep_name") == rep_filter]
+        if status_filter:
+            calls = [c for c in calls if c.get("status") == status_filter]
+    
+    # Get total count
+    total_count = db.count_calls(**filters)
+    if search_query:
+        total_count = len(calls)  # Adjust for search filtering
+    
+    total_pages = (total_count + per_page - 1) // per_page
+    
+    # Get reps for filter dropdown
+    reps = db.get_reps(user_email=session["user_email"])
+    
+    return render_template(
+        "history.html",
+        calls=calls,
+        page=page,
+        total_pages=total_pages,
+        per_page=per_page,
+        rep_filter=rep_filter,
+        status_filter=status_filter,
+        search_query=search_query,
+        reps=reps,
+    )
+
+
+@app.route("/transcript/<job_id>")
+@login_required
+def transcript(job_id):
+    """View interactive transcript."""
+    db = get_database()
+    job = db.get_call(job_id)
+    
+    if not job:
+        flash("Call not found.", "error")
+        return redirect(url_for("history"))
+    
+    if job["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("history"))
+    
+    if job["status"] != "complete":
+        flash("Transcript not available yet.", "warning")
+        return redirect(url_for("process", job_id=job_id))
+    
+    transcription = job.get("transcription_json", {})
+    analysis = job.get("analysis_json", {})
+    
+    if not transcription:
+        flash("Transcript not found.", "error")
+        return redirect(url_for("report", job_id=job_id))
+    
+    # Extract timestamp highlights from analysis
+    timestamp_highlights = analysis.get("timestamp_highlights", [])
+    
+    return render_template(
+        "transcript.html",
+        job=job,
+        transcription=transcription,
+        segments=transcription.get("segments", []),
+        redacted_text=transcription.get("redacted_text", ""),
+        pii_findings=transcription.get("pii_findings", []),
+        timestamp_highlights=timestamp_highlights,
+    )
+
+
+@app.route("/api/transcript/export/<job_id>")
+@login_required
+def export_transcript(job_id):
+    """Export transcript as text file."""
+    db = get_database()
+    job = db.get_call(job_id)
+    
+    if not job:
+        return jsonify({"error": "Call not found"}), 404
+    
+    if job["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    transcription = job.get("transcription_json", {})
+    if not transcription:
+        return jsonify({"error": "Transcript not found"}), 404
+    
+    redacted_text = transcription.get("redacted_text", "")
+    export_type = request.args.get("type", "text")  # text or pdf
+    
+    if export_type == "text":
+        response = Response(
+            redacted_text,
+            mimetype="text/plain",
+            headers={
+                "Content-Disposition": f"attachment; filename=transcript_{job['filename']}.txt"
+            }
+        )
+        return response
+    elif export_type == "pdf":
+        # Use PDF generator to create transcript PDF
+        pdf_generator = get_pdf_generator()
+        pdf_path = os.path.join(
+            Config.UPLOAD_FOLDER,
+            f"{job_id}_transcript.pdf"
+        )
+        
+        # Generate transcript PDF
+        pdf_generator.generate_transcript_pdf(
+            job=job,
+            transcription=transcription,
+            output_path=pdf_path,
+        )
+        
+        return send_file(
+            pdf_path,
+            as_attachment=True,
+            download_name=f"transcript_{job['filename']}.pdf",
+            mimetype="application/pdf",
+        )
+    
+    return jsonify({"error": "Invalid export type"}), 400
+
+
+@app.route("/team")
+@login_required
+def team():
+    """Team dashboard showing all reps and their performance."""
+    db = get_database()
+    
+    # Get all reps for this user
+    reps = db.get_reps(user_email=session["user_email"])
+    
+    if not reps:
+        flash("No reps found. Assign rep names when uploading calls.", "info")
+        return redirect(url_for("upload"))
+    
+    # Get stats for each rep
+    rep_stats = []
+    for rep in reps:
+        calls = db.list_calls(
+            user_email=session["user_email"],
+            rep_name=rep,
+            status="complete",
+        )
+        
+        if not calls:
+            continue
+        
+        # Calculate rep metrics
+        total_calls = len(calls)
+        total_duration = 0
+        total_questions = 0
+        total_filler = 0
+        avg_talk_ratio = 0
+        
+        for call in calls:
+            stats = call.get("stats_json", {})
+            if stats:
+                total_duration += stats.get("duration_min", 0)
+                total_questions += stats.get("questions", {}).get("agent_total", 0)
+                total_filler += stats.get("filler", {}).get("agent_count", 0)
+                
+                agent_label = stats.get("agent_label", "spk_0")
+                talk_share = stats.get("talk_share_pct", {}).get(agent_label, 0)
+                avg_talk_ratio += talk_share
+        
+        rep_stats.append({
+            "name": rep,
+            "total_calls": total_calls,
+            "avg_duration": round(total_duration / total_calls, 1) if total_calls else 0,
+            "avg_questions": round(total_questions / total_calls, 1) if total_calls else 0,
+            "avg_filler": round(total_filler / total_calls, 1) if total_calls else 0,
+            "avg_talk_ratio": round(avg_talk_ratio / total_calls, 1) if total_calls else 0,
+            "recent_calls": calls[:5],  # Last 5 calls
+        })
+    
+    # Sort by total calls
+    rep_stats.sort(key=lambda x: x["total_calls"], reverse=True)
+    
+    return render_template("team.html", rep_stats=rep_stats)
+
+
+@app.route("/compare")
+@login_required
+def compare():
+    """Compare multiple calls side-by-side."""
+    db = get_database()
+    
+    # Get call IDs from query params
+    call_ids = request.args.getlist("call_id")
+    
+    if not call_ids:
+        flash("Please select at least 2 calls to compare.", "warning")
+        return redirect(url_for("history"))
+    
+    if len(call_ids) < 2:
+        flash("Please select at least 2 calls to compare.", "warning")
+        return redirect(url_for("history"))
+    
+    # Fetch calls
+    calls = []
+    for call_id in call_ids:
+        call = db.get_call(call_id)
+        if not call:
+            continue
+        
+        # Verify ownership
+        if call["user_email"] != session["user_email"]:
+            continue
+        
+        # Only include completed calls
+        if call["status"] != "complete":
+            continue
+        
+        calls.append(call)
+    
+    if len(calls) < 2:
+        flash("Need at least 2 completed calls to compare.", "error")
+        return redirect(url_for("history"))
+    
+    # Compare calls
+    comparison_service = get_comparison()
+    comparison = comparison_service.compare_calls(calls)
+    
+    return render_template("compare.html", comparison=comparison)
+
+
+@app.route("/api/annotations/<job_id>", methods=["GET"])
+@login_required
+def get_annotations_api(job_id):
+    """Get annotations for a call."""
+    db = get_database()
+    job = db.get_call(job_id)
+    
+    if not job:
+        return jsonify({"error": "Call not found"}), 404
+    
+    if job["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    annotations_service = get_annotations()
+    annotations = annotations_service.get_annotations(job_id)
+    
+    return jsonify({"annotations": annotations})
+
+
+@app.route("/api/annotations/<job_id>", methods=["POST"])
+@login_required
+def create_annotation_api(job_id):
+    """Create a new annotation."""
+    db = get_database()
+    job = db.get_call(job_id)
+    
+    if not job:
+        return jsonify({"error": "Call not found"}), 404
+    
+    if job["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    data = request.get_json()
+    note = data.get("note", "").strip()
+    timestamp_sec = data.get("timestamp_sec")
+    
+    if not note:
+        return jsonify({"error": "Note is required"}), 400
+    
+    if timestamp_sec is not None:
+        try:
+            timestamp_sec = float(timestamp_sec)
+        except (ValueError, TypeError):
+            timestamp_sec = None
+    
+    annotations_service = get_annotations()
+    annotation = annotations_service.create_annotation(
+        call_id=job_id,
+        note=note,
+        timestamp_sec=timestamp_sec,
+    )
+    
+    return jsonify({"annotation": annotation}), 201
+
+
+@app.route("/api/annotations/<int:annotation_id>", methods=["PUT", "DELETE"])
+@login_required
+def update_annotation_api(annotation_id):
+    """Update or delete an annotation."""
+    annotations_service = get_annotations()
+    
+    # Get annotation to verify ownership via database
+    db = get_database()
+    # We need to find the annotation's call_id - query annotations table
+    import sqlite3
+    conn = sqlite3.connect(Config.DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT call_id FROM annotations WHERE id = ?", (annotation_id,))
+    annotation_row = cursor.fetchone()
+    conn.close()
+    
+    if not annotation_row:
+        return jsonify({"error": "Annotation not found"}), 404
+    
+    # Verify call ownership
+    call = db.get_call(annotation_row["call_id"])
+    if not call or call["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    if request.method == "PUT":
+        data = request.get_json()
+        note = data.get("note")
+        timestamp_sec = data.get("timestamp_sec")
+        
+        if timestamp_sec is not None:
+            try:
+                timestamp_sec = float(timestamp_sec)
+            except (ValueError, TypeError):
+                timestamp_sec = None
+        
+        updated = annotations_service.update_annotation(
+            annotation_id=annotation_id,
+            note=note,
+            timestamp_sec=timestamp_sec,
+        )
+        
+        if updated:
+            return jsonify({"annotation": updated})
+        return jsonify({"error": "Update failed"}), 400
+    
+    else:  # DELETE
+        deleted = annotations_service.delete_annotation(annotation_id)
+        if deleted:
+            return jsonify({"message": "Annotation deleted"}), 200
+        return jsonify({"error": "Delete failed"}), 400
+
+
+@app.route("/api/export/<export_type>")
+@login_required
+def export_calls(export_type):
+    """Export calls in various formats."""
+    db = get_database()
+    
+    # Get filters
+    rep_filter = request.args.get("rep", "")
+    status_filter = request.args.get("status", "complete")
+    
+    filters = {"user_email": session["user_email"], "status": status_filter}
+    if rep_filter:
+        filters["rep_name"] = rep_filter
+    
+    # Get all matching calls
+    calls = db.list_calls(limit=1000, **filters)
+    
+    if not calls:
+        flash("No calls found to export.", "warning")
+        return redirect(url_for("history"))
+    
+    exporter = get_exporter()
+    
+    if export_type == "csv":
+        output_path = os.path.join(Config.UPLOAD_FOLDER, f"export_{uuid.uuid4().hex[:8]}.csv")
+        exporter.export_csv(calls, output_path)
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name="calls_export.csv",
+            mimetype="text/csv",
+        )
+    
+    elif export_type == "json":
+        output_path = os.path.join(Config.UPLOAD_FOLDER, f"export_{uuid.uuid4().hex[:8]}.json")
+        exporter.export_json(calls, output_path)
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name="calls_export.json",
+            mimetype="application/json",
+        )
+    
+    else:
+        flash("Invalid export type.", "error")
+        return redirect(url_for("history"))
+
+
+@app.route("/api/export/srt/<job_id>")
+@login_required
+def export_srt(job_id):
+    """Export transcript as SRT subtitle file."""
+    db = get_database()
+    job = db.get_call(job_id)
+    
+    if not job:
+        flash("Call not found.", "error")
+        return redirect(url_for("history"))
+    
+    if job["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("history"))
+    
+    transcription = job.get("transcription_json", {})
+    segments = transcription.get("segments", [])
+    
+    if not segments:
+        flash("No transcript segments found.", "error")
+        return redirect(url_for("transcript", job_id=job_id))
+    
+    exporter = get_exporter()
+    output_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_transcript.srt")
+    exporter.export_srt(segments, output_path)
+    
+    return send_file(
+        output_path,
+        as_attachment=True,
+        download_name=f"transcript_{job['filename']}.srt",
+        mimetype="text/srt",
     )
 
 

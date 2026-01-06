@@ -1,0 +1,453 @@
+{% extends "base.html" %}
+
+{% block title %}Call History - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="history">
+    <div class="history-header">
+        <h1>Call History</h1>
+        <div class="header-actions">
+            <a href="{{ url_for('export_calls', export_type='csv') }}" class="btn btn-outline">Export CSV</a>
+            <a href="{{ url_for('export_calls', export_type='json') }}" class="btn btn-outline">Export JSON</a>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary">
+                <span>+</span> Upload New Call
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-card">
+        <form method="GET" class="filters-form">
+            <div class="filter-group">
+                <label for="search">Search</label>
+                <input 
+                    type="text" 
+                    id="search" 
+                    name="search" 
+                    value="{{ search_query }}"
+                    placeholder="Search by filename..."
+                    class="form-input"
+                >
+            </div>
+
+            <div class="filter-group">
+                <label for="rep">Rep</label>
+                <select id="rep" name="rep" class="form-input">
+                    <option value="">All Reps</option>
+                    {% for rep in reps %}
+                    <option value="{{ rep }}" {% if rep == rep_filter %}selected{% endif %}>
+                        {{ rep }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="status">Status</label>
+                <select id="status" name="status" class="form-input">
+                    <option value="">All Statuses</option>
+                    <option value="complete" {% if status_filter == 'complete' %}selected{% endif %}>Complete</option>
+                    <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="transcribing" {% if status_filter == 'transcribing' %}selected{% endif %}>Transcribing</option>
+                    <option value="analyzing" {% if status_filter == 'analyzing' %}selected{% endif %}>Analyzing</option>
+                    <option value="error" {% if status_filter == 'error' %}selected{% endif %}>Error</option>
+                </select>
+            </div>
+
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary">Apply Filters</button>
+                <a href="{{ url_for('history') }}" class="btn btn-outline">Clear</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Calls Table -->
+    <div class="calls-card">
+        {% if calls %}
+        <form method="GET" action="{{ url_for('compare') }}" id="compare-form" style="margin-bottom: 16px;">
+            <button type="submit" class="btn btn-primary" id="compare-btn" disabled>
+                Compare Selected
+            </button>
+        </form>
+        <div class="calls-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="select-all" title="Select all">
+                        </th>
+                        <th>Filename</th>
+                        <th>Rep</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for call in calls %}
+                    <tr>
+                        <td>
+                            {% if call.status == 'complete' %}
+                            <input type="checkbox" name="call_id" value="{{ call.id }}" class="call-checkbox">
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="file-cell">
+                                <span class="file-icon">🎙️</span>
+                                <span class="file-name">{{ call.filename }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            {% if call.rep_name %}
+                                <span class="rep-badge">{{ call.rep_name }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="status-badge status-{{ call.status }}">
+                                {{ call.status }}
+                            </span>
+                        </td>
+                        <td class="text-muted">
+                            {% if call.created_at %}
+                                {{ call.created_at[:16]|replace('T', ' ') }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                {% if call.status == 'complete' %}
+                                    <a href="{{ url_for('report', job_id=call.id) }}" class="btn-link">Report</a>
+                                    <a href="{{ url_for('transcript', job_id=call.id) }}" class="btn-link">Transcript</a>
+                                    <a href="{{ url_for('download', job_id=call.id, report_type='coaching') }}" class="btn-link">PDF</a>
+                                {% elif call.status == 'error' %}
+                                    <span class="text-muted">Error</span>
+                                {% else %}
+                                    <a href="{{ url_for('process', job_id=call.id) }}" class="btn-link">Processing</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="{{ url_for('history', page=page-1, rep=rep_filter, status=status_filter, search=search_query) }}" 
+               class="btn btn-outline">Previous</a>
+            {% endif %}
+
+            <span class="pagination-info">
+                Page {{ page }} of {{ total_pages }}
+            </span>
+
+            {% if page < total_pages %}
+            <a href="{{ url_for('history', page=page+1, rep=rep_filter, status=status_filter, search=search_query) }}" 
+               class="btn btn-outline">Next</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📞</div>
+            <h3>No calls found</h3>
+            <p>Try adjusting your filters or upload a new call.</p>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary">Upload Call</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Comparison checkbox handling
+const selectAll = document.getElementById('select-all');
+const checkboxes = document.querySelectorAll('.call-checkbox');
+const compareBtn = document.getElementById('compare-btn');
+const compareForm = document.getElementById('compare-form');
+
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        checkboxes.forEach(cb => {
+            cb.checked = this.checked;
+        });
+        updateCompareButton();
+    });
+}
+
+checkboxes.forEach(cb => {
+    cb.addEventListener('change', function() {
+        if (selectAll) {
+            selectAll.checked = Array.from(checkboxes).every(c => c.checked);
+        }
+        updateCompareButton();
+    });
+});
+
+function updateCompareButton() {
+    const selected = Array.from(checkboxes).filter(cb => cb.checked);
+    if (compareBtn) {
+        compareBtn.disabled = selected.length < 2;
+    }
+}
+
+if (compareForm) {
+    compareForm.addEventListener('submit', function(e) {
+        const selected = Array.from(checkboxes).filter(cb => cb.checked);
+        if (selected.length < 2) {
+            e.preventDefault();
+            alert('Please select at least 2 calls to compare.');
+            return false;
+        }
+        
+        // Add selected call IDs to form
+        selected.forEach(cb => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'call_id';
+            input.value = cb.value;
+            compareForm.appendChild(input);
+        });
+    });
+}
+
+updateCompareButton();
+</script>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.history {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.history-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+}
+
+.filters-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.filters-form {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr auto;
+    gap: 16px;
+    align-items: end;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.filter-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.form-input {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-family: var(--font);
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(15, 98, 254, 0.1);
+}
+
+.filter-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.calls-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+}
+
+.calls-table {
+    overflow-x: auto;
+}
+
+.calls-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.calls-table th {
+    text-align: left;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 2px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.calls-table td {
+    padding: 16px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.calls-table tr:last-child td {
+    border-bottom: none;
+}
+
+.file-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-icon {
+    font-size: 18px;
+}
+
+.file-name {
+    font-weight: 500;
+}
+
+.rep-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.status-complete {
+    background: #d1f2eb;
+    color: #0e7c5e;
+}
+
+.status-pending,
+.status-transcribing,
+.status-analyzing,
+.status-generating_pdf,
+.status-sending_email {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 12px;
+}
+
+.btn-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+}
+
+.pagination-info {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+    .filters-form {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
