@@ -461,17 +461,27 @@ class KeywordTrackingService:
 
         # Insert new occurrences
         for occ in occurrences[:100]:  # Limit to 100 per call
+            # Convert numpy types to native Python types for database compatibility
+            timestamp_sec = occ.get("timestamp_sec")
+            if timestamp_sec is not None:
+                # Convert numpy float64/int64 to native Python float/int
+                timestamp_sec = float(timestamp_sec) if timestamp_sec is not None else None
+            
+            library_id = occ.get("library_id")
+            if library_id is not None:
+                library_id = int(library_id) if library_id is not None else None
+            
             cursor.execute(f"""
                 INSERT INTO keyword_occurrences 
                 (call_id, library_id, keyword, speaker, timestamp_sec, context)
                 VALUES ({param}, {param}, {param}, {param}, {param}, {param})
             """, (
                 call_id,
-                occ.get("library_id"),
-                occ["keyword"],
-                occ.get("speaker"),
-                occ.get("timestamp_sec"),
-                occ.get("context"),
+                library_id,
+                str(occ["keyword"]),  # Ensure string
+                str(occ.get("speaker")) if occ.get("speaker") else None,
+                timestamp_sec,
+                str(occ.get("context")) if occ.get("context") else None,
             ))
 
         conn.commit()
