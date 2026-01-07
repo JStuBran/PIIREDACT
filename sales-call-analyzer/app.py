@@ -27,6 +27,9 @@ import time
 
 from config import Config
 
+# Import API v1 blueprint
+from api_v1 import api_v1, trigger_webhook
+
 # Simple in-memory rate limiter (use Redis in production)
 _rate_limit_store = defaultdict(list)
 RATE_LIMIT_WINDOW = 300  # 5 minutes
@@ -55,6 +58,10 @@ from services import (
     AnnotationsService,
     ExporterService,
     BenchmarkService,
+    ScoringService,
+    ConversationIntelligenceService,
+    KeywordTrackingService,
+    PlaylistService,
 )
 
 # Configure logging
@@ -84,6 +91,9 @@ def add_security_headers(response):
 # Ensure upload folder exists
 os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
 
+# Register API blueprint
+app.register_blueprint(api_v1)
+
 # Token serializer for magic links
 serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
 
@@ -98,6 +108,10 @@ _analytics: Optional[AnalyticsService] = None
 _annotations: Optional[AnnotationsService] = None
 _exporter: Optional[ExporterService] = None
 _benchmark: Optional[BenchmarkService] = None
+_scoring: Optional[ScoringService] = None
+_conversation_intel: Optional[ConversationIntelligenceService] = None
+_keyword_tracking: Optional[KeywordTrackingService] = None
+_playlists: Optional[PlaylistService] = None
 
 
 def get_transcriber() -> TranscriberService:
@@ -185,6 +199,41 @@ def get_benchmark() -> BenchmarkService:
     if _benchmark is None:
         _benchmark = BenchmarkService()
     return _benchmark
+
+
+def get_scoring() -> ScoringService:
+    """Get or create scoring service."""
+    global _scoring
+    if _scoring is None:
+        _scoring = ScoringService(
+            api_key=Config.OPENAI_API_KEY,
+            model=Config.OPENAI_MODEL,
+        )
+    return _scoring
+
+
+def get_conversation_intel() -> ConversationIntelligenceService:
+    """Get or create conversation intelligence service."""
+    global _conversation_intel
+    if _conversation_intel is None:
+        _conversation_intel = ConversationIntelligenceService()
+    return _conversation_intel
+
+
+def get_keyword_tracking() -> KeywordTrackingService:
+    """Get or create keyword tracking service."""
+    global _keyword_tracking
+    if _keyword_tracking is None:
+        _keyword_tracking = KeywordTrackingService()
+    return _keyword_tracking
+
+
+def get_playlists() -> PlaylistService:
+    """Get or create playlist service."""
+    global _playlists
+    if _playlists is None:
+        _playlists = PlaylistService()
+    return _playlists
 
 
 def login_required(f):
@@ -389,33 +438,59 @@ def api_analyze(job_id):
     if job["status"] != "pending":
         return jsonify({"error": "Job already processing or complete"}), 400
     
-    # Start background processing
-    from services.background_processor import BackgroundProcessor
+    # Check if Celery is enabled
+    if Config.USE_CELERY:
+        # Use Celery for distributed processing
+        from tasks import process_call_task
+        
+        task = process_call_task.delay(
+            job_id=job_id,
+            file_path=job["file_path"],
+            filename=job["filename"],
+            user_email=job["user_email"],
+        )
+        
+        # Store task ID for status tracking
+        db.update_call(job_id, status="queued")
+        
+        return jsonify({
+            "status": "queued",
+            "task_id": task.id,
+            "message": "Job queued for processing.",
+        })
     
-    processor = BackgroundProcessor()
-    services = {
-        "database": db,
-        "transcriber": get_transcriber(),
-        "analyzer": get_analyzer(),
-        "analytics": get_analytics(),
-        "pdf_generator": get_pdf_generator(),
-        "email_sender": get_email_sender(),
-    }
-    
-    processor.process_call_async(
-        job_id=job_id,
-        file_path=job["file_path"],
-        filename=job["filename"],
-        user_email=job["user_email"],
-        services=services,
-        config=Config,
-    )
-    
-    # Return immediately - processing happens in background
-    return jsonify({
-        "status": "processing",
-        "message": "Analysis started. This page will update automatically.",
-    })
+    else:
+        # Use in-process background threading (default)
+        from services.background_processor import BackgroundProcessor
+        
+        processor = BackgroundProcessor()
+        services = {
+            "database": db,
+            "transcriber": get_transcriber(),
+            "analyzer": get_analyzer(),
+            "analytics": get_analytics(),
+            "pdf_generator": get_pdf_generator(),
+            "email_sender": get_email_sender(),
+            "scoring": get_scoring(),
+            "conversation_intel": get_conversation_intel(),
+            "keyword_tracking": get_keyword_tracking(),
+            "user_email": job["user_email"],
+        }
+        
+        processor.process_call_async(
+            job_id=job_id,
+            file_path=job["file_path"],
+            filename=job["filename"],
+            user_email=job["user_email"],
+            services=services,
+            config=Config,
+        )
+        
+        # Return immediately - processing happens in background
+        return jsonify({
+            "status": "processing",
+            "message": "Analysis started. This page will update automatically.",
+        })
 
 
 @app.route("/api/status/<job_id>")
@@ -467,6 +542,26 @@ def report(job_id):
     benchmarks = benchmark_service.calculate_benchmarks(all_calls)
     rankings = benchmark_service.rank_call(job, benchmarks, all_calls)
     
+    # Get call score
+    scoring = get_scoring()
+    call_score = scoring.get_score(job_id)
+    
+    # Get rubric criteria names for display
+    score_criteria = []
+    if call_score and call_score.get("rubric_id"):
+        rubric = scoring.get_rubric(call_score["rubric_id"])
+        if rubric:
+            for criterion in rubric.get("criteria", []):
+                cid = criterion["id"]
+                score_data = call_score.get("scores", {}).get(cid, {})
+                score_criteria.append({
+                    "name": criterion["name"],
+                    "score": score_data.get("score", 0),
+                    "max_score": criterion.get("max_score", 5),
+                    "justification": score_data.get("justification", ""),
+                    "weight": criterion.get("weight", 0),
+                })
+    
     return render_template(
         "report.html",
         job=job,
@@ -474,6 +569,8 @@ def report(job_id):
         stats=job.get("stats_json", {}),
         benchmarks=benchmarks,
         rankings=rankings,
+        call_score=call_score,
+        score_criteria=score_criteria,
     )
 
 
@@ -542,12 +639,19 @@ def dashboard():
     )
     benchmarks = benchmark_service.calculate_benchmarks(all_completed)
     
+    # Get leaderboard and score trends
+    scoring = get_scoring()
+    leaderboard = scoring.get_leaderboard(session["user_email"])
+    score_trends = scoring.get_score_trends(session["user_email"])
+    
     return render_template(
         "dashboard.html",
         recent_calls=recent_calls,
         stats=stats,
         reps=reps,
         benchmarks=benchmarks,
+        leaderboard=leaderboard,
+        score_trends=score_trends,
     )
 
 
@@ -998,10 +1102,738 @@ def export_srt(job_id):
     )
 
 
+# ============================================================================
+# Scoring and Rubrics Routes
+# ============================================================================
+
+@app.route("/rubrics")
+@login_required
+def rubrics():
+    """View and manage scoring rubrics."""
+    scoring = get_scoring()
+    user_rubrics = scoring.list_rubrics(session["user_email"])
+    
+    # Ensure user has at least one rubric
+    if not user_rubrics:
+        scoring.get_default_rubric(session["user_email"])
+        user_rubrics = scoring.list_rubrics(session["user_email"])
+    
+    return render_template("rubrics.html", rubrics=user_rubrics)
+
+
+@app.route("/rubrics/new", methods=["GET", "POST"])
+@login_required
+def create_rubric():
+    """Create a new scoring rubric."""
+    if request.method == "POST":
+        scoring = get_scoring()
+        
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        is_default = request.form.get("is_default") == "on"
+        
+        # Parse criteria from form
+        criteria = []
+        i = 0
+        while f"criteria_{i}_name" in request.form:
+            criteria.append({
+                "id": request.form.get(f"criteria_{i}_id", f"criterion_{i}").strip().lower().replace(" ", "_"),
+                "name": request.form.get(f"criteria_{i}_name", "").strip(),
+                "description": request.form.get(f"criteria_{i}_description", "").strip(),
+                "weight": int(request.form.get(f"criteria_{i}_weight", 10)),
+                "max_score": int(request.form.get(f"criteria_{i}_max_score", 5)),
+            })
+            i += 1
+        
+        if not name:
+            flash("Rubric name is required.", "error")
+            return render_template("rubric_form.html", rubric=None, criteria=criteria)
+        
+        if not criteria:
+            flash("At least one criterion is required.", "error")
+            return render_template("rubric_form.html", rubric=None, criteria=criteria)
+        
+        rubric = scoring.create_rubric(
+            user_email=session["user_email"],
+            name=name,
+            description=description,
+            criteria=criteria,
+            is_default=is_default,
+        )
+        
+        flash("Rubric created successfully!", "success")
+        return redirect(url_for("rubrics"))
+    
+    # GET - show form with default criteria as template
+    from services.scoring import DEFAULT_RUBRIC
+    return render_template("rubric_form.html", rubric=None, criteria=DEFAULT_RUBRIC["criteria"])
+
+
+@app.route("/rubrics/<int:rubric_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_rubric(rubric_id):
+    """Edit an existing rubric."""
+    scoring = get_scoring()
+    rubric = scoring.get_rubric(rubric_id)
+    
+    if not rubric:
+        flash("Rubric not found.", "error")
+        return redirect(url_for("rubrics"))
+    
+    if rubric["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("rubrics"))
+    
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        is_default = request.form.get("is_default") == "on"
+        
+        # Parse criteria from form
+        criteria = []
+        i = 0
+        while f"criteria_{i}_name" in request.form:
+            criteria.append({
+                "id": request.form.get(f"criteria_{i}_id", f"criterion_{i}").strip().lower().replace(" ", "_"),
+                "name": request.form.get(f"criteria_{i}_name", "").strip(),
+                "description": request.form.get(f"criteria_{i}_description", "").strip(),
+                "weight": int(request.form.get(f"criteria_{i}_weight", 10)),
+                "max_score": int(request.form.get(f"criteria_{i}_max_score", 5)),
+            })
+            i += 1
+        
+        scoring.update_rubric(
+            rubric_id=rubric_id,
+            name=name,
+            description=description,
+            criteria=criteria,
+            is_default=is_default,
+        )
+        
+        flash("Rubric updated successfully!", "success")
+        return redirect(url_for("rubrics"))
+    
+    return render_template("rubric_form.html", rubric=rubric, criteria=rubric.get("criteria", []))
+
+
+@app.route("/rubrics/<int:rubric_id>/delete", methods=["POST"])
+@login_required
+def delete_rubric(rubric_id):
+    """Delete a rubric."""
+    scoring = get_scoring()
+    rubric = scoring.get_rubric(rubric_id)
+    
+    if not rubric:
+        flash("Rubric not found.", "error")
+        return redirect(url_for("rubrics"))
+    
+    if rubric["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("rubrics"))
+    
+    scoring.delete_rubric(rubric_id)
+    flash("Rubric deleted.", "success")
+    return redirect(url_for("rubrics"))
+
+
+@app.route("/api/scores/<job_id>")
+@login_required
+def api_get_score(job_id):
+    """Get score for a call."""
+    db = get_database()
+    job = db.get_call(job_id)
+    
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    
+    if job["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    scoring = get_scoring()
+    score = scoring.get_score(job_id)
+    
+    if not score:
+        return jsonify({"error": "Score not found"}), 404
+    
+    return jsonify({"score": score})
+
+
+@app.route("/api/leaderboard")
+@login_required
+def api_leaderboard():
+    """Get rep leaderboard."""
+    scoring = get_scoring()
+    leaderboard = scoring.get_leaderboard(session["user_email"])
+    return jsonify({"leaderboard": leaderboard})
+
+
+@app.route("/api/score-trends")
+@login_required
+def api_score_trends():
+    """Get score trends."""
+    rep_name = request.args.get("rep")
+    days = int(request.args.get("days", 30))
+    
+    scoring = get_scoring()
+    trends = scoring.get_score_trends(
+        user_email=session["user_email"],
+        rep_name=rep_name if rep_name else None,
+        days=days,
+    )
+    return jsonify(trends)
+
+
+# ============================================================================
+# Keyword Library Routes
+# ============================================================================
+
+@app.route("/keywords")
+@login_required
+def keywords():
+    """View and manage keyword libraries."""
+    kw_service = get_keyword_tracking()
+    libraries = kw_service.get_or_create_default_libraries(session["user_email"])
+    trends = kw_service.get_keyword_trends(session["user_email"])
+    
+    return render_template(
+        "keywords.html",
+        libraries=libraries,
+        trends=trends,
+    )
+
+
+@app.route("/keywords/library/new", methods=["GET", "POST"])
+@login_required
+def create_keyword_library():
+    """Create a new keyword library."""
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        keywords_text = request.form.get("keywords", "").strip()
+        category = request.form.get("category", "custom")
+        
+        if not name:
+            flash("Library name is required.", "error")
+            return render_template("keyword_library_form.html", library=None)
+        
+        # Parse keywords (one per line or comma-separated)
+        keywords = []
+        for line in keywords_text.split("\n"):
+            for kw in line.split(","):
+                kw = kw.strip()
+                if kw:
+                    keywords.append(kw)
+        
+        if not keywords:
+            flash("At least one keyword is required.", "error")
+            return render_template("keyword_library_form.html", library=None)
+        
+        kw_service = get_keyword_tracking()
+        kw_service.create_library(
+            user_email=session["user_email"],
+            name=name,
+            keywords=keywords,
+            category=category,
+        )
+        
+        flash("Keyword library created!", "success")
+        return redirect(url_for("keywords"))
+    
+    return render_template("keyword_library_form.html", library=None)
+
+
+@app.route("/keywords/library/<int:library_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_keyword_library(library_id):
+    """Edit a keyword library."""
+    kw_service = get_keyword_tracking()
+    library = kw_service.get_library(library_id)
+    
+    if not library:
+        flash("Library not found.", "error")
+        return redirect(url_for("keywords"))
+    
+    if library["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("keywords"))
+    
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        keywords_text = request.form.get("keywords", "").strip()
+        is_active = request.form.get("is_active") == "on"
+        
+        # Parse keywords
+        keywords = []
+        for line in keywords_text.split("\n"):
+            for kw in line.split(","):
+                kw = kw.strip()
+                if kw:
+                    keywords.append(kw)
+        
+        kw_service.update_library(
+            library_id=library_id,
+            name=name,
+            keywords=keywords,
+            is_active=is_active,
+        )
+        
+        flash("Library updated!", "success")
+        return redirect(url_for("keywords"))
+    
+    return render_template("keyword_library_form.html", library=library)
+
+
+@app.route("/keywords/library/<int:library_id>/delete", methods=["POST"])
+@login_required
+def delete_keyword_library(library_id):
+    """Delete a keyword library."""
+    kw_service = get_keyword_tracking()
+    library = kw_service.get_library(library_id)
+    
+    if not library:
+        flash("Library not found.", "error")
+        return redirect(url_for("keywords"))
+    
+    if library["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("keywords"))
+    
+    kw_service.delete_library(library_id)
+    flash("Library deleted.", "success")
+    return redirect(url_for("keywords"))
+
+
+@app.route("/api/keywords/trends")
+@login_required
+def api_keyword_trends():
+    """Get keyword frequency trends."""
+    kw_service = get_keyword_tracking()
+    trends = kw_service.get_keyword_trends(session["user_email"])
+    return jsonify(trends)
+
+
+# ============================================================================
+# Playlist Routes
+# ============================================================================
+
+@app.route("/playlists")
+@login_required
+def playlists():
+    """View all playlists."""
+    playlist_service = get_playlists()
+    user_playlists = playlist_service.list_playlists(session["user_email"])
+    
+    return render_template("playlists.html", playlists=user_playlists)
+
+
+@app.route("/playlists/new", methods=["GET", "POST"])
+@login_required
+def create_playlist():
+    """Create a new playlist."""
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        category = request.form.get("category", "training")
+        is_public = request.form.get("is_public") == "on"
+        
+        if not name:
+            flash("Playlist name is required.", "error")
+            return render_template("playlist_form.html", playlist=None)
+        
+        playlist_service = get_playlists()
+        playlist = playlist_service.create_playlist(
+            user_email=session["user_email"],
+            name=name,
+            description=description,
+            category=category,
+            is_public=is_public,
+        )
+        
+        flash("Playlist created!", "success")
+        return redirect(url_for("view_playlist", playlist_id=playlist["id"]))
+    
+    return render_template("playlist_form.html", playlist=None)
+
+
+@app.route("/playlists/<int:playlist_id>")
+@login_required
+def view_playlist(playlist_id):
+    """View a playlist with its items."""
+    playlist_service = get_playlists()
+    playlist = playlist_service.get_playlist(playlist_id)
+    
+    if not playlist:
+        flash("Playlist not found.", "error")
+        return redirect(url_for("playlists"))
+    
+    # Check access
+    if not playlist["is_public"] and playlist["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("playlists"))
+    
+    # Get completion stats if user owns the playlist
+    completion_stats = None
+    if playlist["user_email"] == session["user_email"]:
+        completion_stats = playlist_service.get_playlist_completion_stats(playlist_id)
+    
+    # Get current user's progress
+    user_progress = playlist_service.get_rep_progress(playlist_id, session["user_email"])
+    
+    return render_template(
+        "playlist_view.html",
+        playlist=playlist,
+        completion_stats=completion_stats,
+        user_progress=user_progress,
+    )
+
+
+@app.route("/playlists/<int:playlist_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_playlist(playlist_id):
+    """Edit a playlist."""
+    playlist_service = get_playlists()
+    playlist = playlist_service.get_playlist(playlist_id)
+    
+    if not playlist:
+        flash("Playlist not found.", "error")
+        return redirect(url_for("playlists"))
+    
+    if playlist["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("playlists"))
+    
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        category = request.form.get("category", "training")
+        is_public = request.form.get("is_public") == "on"
+        
+        playlist_service.update_playlist(
+            playlist_id=playlist_id,
+            name=name,
+            description=description,
+            category=category,
+            is_public=is_public,
+        )
+        
+        flash("Playlist updated!", "success")
+        return redirect(url_for("view_playlist", playlist_id=playlist_id))
+    
+    return render_template("playlist_form.html", playlist=playlist)
+
+
+@app.route("/playlists/<int:playlist_id>/delete", methods=["POST"])
+@login_required
+def delete_playlist(playlist_id):
+    """Delete a playlist."""
+    playlist_service = get_playlists()
+    playlist = playlist_service.get_playlist(playlist_id)
+    
+    if not playlist:
+        flash("Playlist not found.", "error")
+        return redirect(url_for("playlists"))
+    
+    if playlist["user_email"] != session["user_email"]:
+        flash("Access denied.", "error")
+        return redirect(url_for("playlists"))
+    
+    playlist_service.delete_playlist(playlist_id)
+    flash("Playlist deleted.", "success")
+    return redirect(url_for("playlists"))
+
+
+@app.route("/playlists/<int:playlist_id>/add/<job_id>", methods=["POST"])
+@login_required
+def add_to_playlist(playlist_id, job_id):
+    """Add a call to a playlist."""
+    playlist_service = get_playlists()
+    playlist = playlist_service.get_playlist(playlist_id)
+    
+    if not playlist:
+        return jsonify({"error": "Playlist not found"}), 404
+    
+    if playlist["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    notes = request.form.get("notes", "")
+    
+    playlist_service.add_item(
+        playlist_id=playlist_id,
+        call_id=job_id,
+        notes=notes,
+    )
+    
+    if request.headers.get("Accept") == "application/json":
+        return jsonify({"message": "Added to playlist"})
+    
+    flash("Call added to playlist!", "success")
+    return redirect(request.referrer or url_for("view_playlist", playlist_id=playlist_id))
+
+
+@app.route("/playlists/<int:playlist_id>/remove/<int:item_id>", methods=["POST"])
+@login_required
+def remove_from_playlist(playlist_id, item_id):
+    """Remove an item from a playlist."""
+    playlist_service = get_playlists()
+    playlist = playlist_service.get_playlist(playlist_id)
+    
+    if not playlist:
+        return jsonify({"error": "Playlist not found"}), 404
+    
+    if playlist["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    playlist_service.remove_item(item_id)
+    
+    if request.headers.get("Accept") == "application/json":
+        return jsonify({"message": "Removed from playlist"})
+    
+    flash("Item removed.", "success")
+    return redirect(url_for("view_playlist", playlist_id=playlist_id))
+
+
+@app.route("/playlists/<int:playlist_id>/complete/<int:item_id>", methods=["POST"])
+@login_required
+def mark_playlist_item_complete(playlist_id, item_id):
+    """Mark a playlist item as completed."""
+    playlist_service = get_playlists()
+    
+    notes = request.form.get("notes", "")
+    self_score = request.form.get("self_score")
+    if self_score:
+        try:
+            self_score = int(self_score)
+        except ValueError:
+            self_score = None
+    
+    playlist_service.mark_item_complete(
+        playlist_id=playlist_id,
+        item_id=item_id,
+        rep_email=session["user_email"],
+        notes=notes,
+        self_score=self_score,
+    )
+    
+    if request.headers.get("Accept") == "application/json":
+        return jsonify({"message": "Marked complete"})
+    
+    flash("Progress saved!", "success")
+    return redirect(url_for("view_playlist", playlist_id=playlist_id))
+
+
 @app.route("/health")
 def health():
     """Health check endpoint."""
     return "OK"
+
+
+# ============================================================================
+# API Keys Management (Web Interface)
+# ============================================================================
+
+@app.route("/api-keys")
+@login_required
+def api_keys():
+    """View and manage API keys."""
+    import hashlib
+    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE
+    import os
+    
+    conn = _get_db_connection()
+    database_url = os.environ.get("DATABASE_URL")
+    
+    if database_url and PSYCOPG2_AVAILABLE:
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        param = "%s"
+    else:
+        cursor = conn.cursor()
+        param = "?"
+    
+    cursor.execute(
+        f"SELECT id, name, permissions, last_used, created_at, is_active FROM api_keys WHERE user_email = {param}",
+        (session["user_email"],)
+    )
+    keys = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return render_template("api_keys.html", keys=keys)
+
+
+@app.route("/api-keys/create", methods=["POST"])
+@login_required
+def create_api_key():
+    """Create a new API key."""
+    import hashlib
+    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE
+    import os
+    
+    name = request.form.get("name", "My API Key").strip()
+    permissions = request.form.get("permissions", "read,write")
+    
+    # Generate new key
+    raw_key = f"sk_{uuid.uuid4().hex}"
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    
+    conn = _get_db_connection()
+    cursor = conn.cursor()
+    database_url = os.environ.get("DATABASE_URL")
+    param = "%s" if database_url else "?"
+    
+    cursor.execute(f"""
+        INSERT INTO api_keys (user_email, key_hash, name, permissions)
+        VALUES ({param}, {param}, {param}, {param})
+    """, (session["user_email"], key_hash, name, permissions))
+    
+    conn.commit()
+    conn.close()
+    
+    # Show the key once (flash with special styling)
+    flash(f"API Key created: {raw_key}", "api_key")
+    flash("Save this key now - it won't be shown again!", "warning")
+    
+    return redirect(url_for("api_keys"))
+
+
+@app.route("/api-keys/<int:key_id>/delete", methods=["POST"])
+@login_required
+def delete_api_key(key_id):
+    """Delete an API key."""
+    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE
+    import os
+    
+    conn = _get_db_connection()
+    cursor = conn.cursor()
+    database_url = os.environ.get("DATABASE_URL")
+    param = "%s" if database_url else "?"
+    
+    cursor.execute(
+        f"DELETE FROM api_keys WHERE id = {param} AND user_email = {param}",
+        (key_id, session["user_email"])
+    )
+    deleted = cursor.rowcount > 0
+    
+    conn.commit()
+    conn.close()
+    
+    if deleted:
+        flash("API key deleted.", "success")
+    else:
+        flash("API key not found.", "error")
+    
+    return redirect(url_for("api_keys"))
+
+
+# ============================================================================
+# Webhooks Management (Web Interface)
+# ============================================================================
+
+@app.route("/webhooks")
+@login_required
+def webhooks():
+    """View and manage webhooks."""
+    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE, WEBHOOK_EVENTS
+    import os
+    
+    conn = _get_db_connection()
+    database_url = os.environ.get("DATABASE_URL")
+    
+    if database_url and PSYCOPG2_AVAILABLE:
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        param = "%s"
+    else:
+        cursor = conn.cursor()
+        param = "?"
+    
+    cursor.execute(
+        f"SELECT id, url, events, is_active, last_triggered, created_at FROM webhooks WHERE user_email = {param}",
+        (session["user_email"],)
+    )
+    user_webhooks = [dict(row) for row in cursor.fetchall()]
+    
+    # Parse events JSON
+    import json
+    for wh in user_webhooks:
+        wh["events"] = json.loads(wh.get("events", "[]"))
+    
+    conn.close()
+    
+    return render_template(
+        "webhooks.html",
+        webhooks=user_webhooks,
+        available_events=WEBHOOK_EVENTS,
+    )
+
+
+@app.route("/webhooks/create", methods=["POST"])
+@login_required
+def create_webhook():
+    """Create a new webhook."""
+    from api_v1 import _get_db_connection, WEBHOOK_EVENTS
+    import os
+    import json
+    
+    url = request.form.get("url", "").strip()
+    events = request.form.getlist("events")
+    
+    if not url:
+        flash("URL is required.", "error")
+        return redirect(url_for("webhooks"))
+    
+    # Validate events
+    events = [e for e in events if e in WEBHOOK_EVENTS]
+    if not events:
+        events = ["call.completed"]
+    
+    # Generate secret
+    secret = f"whsec_{uuid.uuid4().hex}"
+    
+    conn = _get_db_connection()
+    cursor = conn.cursor()
+    database_url = os.environ.get("DATABASE_URL")
+    param = "%s" if database_url else "?"
+    
+    cursor.execute(f"""
+        INSERT INTO webhooks (user_email, url, events, secret)
+        VALUES ({param}, {param}, {param}, {param})
+    """, (session["user_email"], url, json.dumps(events), secret))
+    
+    conn.commit()
+    conn.close()
+    
+    flash(f"Webhook created! Secret: {secret}", "api_key")
+    flash("Save this secret - it's used to verify webhook signatures.", "warning")
+    
+    return redirect(url_for("webhooks"))
+
+
+@app.route("/webhooks/<int:webhook_id>/delete", methods=["POST"])
+@login_required
+def delete_webhook(webhook_id):
+    """Delete a webhook."""
+    from api_v1 import _get_db_connection
+    import os
+    
+    conn = _get_db_connection()
+    cursor = conn.cursor()
+    database_url = os.environ.get("DATABASE_URL")
+    param = "%s" if database_url else "?"
+    
+    cursor.execute(
+        f"DELETE FROM webhooks WHERE id = {param} AND user_email = {param}",
+        (webhook_id, session["user_email"])
+    )
+    deleted = cursor.rowcount > 0
+    
+    conn.commit()
+    conn.close()
+    
+    if deleted:
+        flash("Webhook deleted.", "success")
+    else:
+        flash("Webhook not found.", "error")
+    
+    return redirect(url_for("webhooks"))
 
 
 # ============================================================================

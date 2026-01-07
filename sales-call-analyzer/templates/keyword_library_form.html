@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if library else 'New' }} Keyword Library - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ 'Edit' if library else 'Create New' }} Keyword Library</h1>
+        <p class="subtitle">Track specific words and phrases across your calls</p>
+    </div>
+    <a href="{{ url_for('keywords') }}" class="btn btn-outline">Cancel</a>
+</div>
+
+<form method="POST" class="library-form">
+    <div class="form-section">
+        <h3>Library Details</h3>
+        
+        <div class="form-group">
+            <label for="name">Library Name *</label>
+            <input type="text" id="name" name="name" value="{{ library.name if library else '' }}" required placeholder="e.g., Competitor Mentions">
+        </div>
+        
+        <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category" name="category">
+                <option value="custom" {% if not library or library.category == 'custom' %}selected{% endif %}>Custom</option>
+                <option value="objections" {% if library and library.category == 'objections' %}selected{% endif %}>Objections</option>
+                <option value="buying_signals" {% if library and library.category == 'buying_signals' %}selected{% endif %}>Buying Signals</option>
+                <option value="pain_points" {% if library and library.category == 'pain_points' %}selected{% endif %}>Pain Points</option>
+                <option value="competitors" {% if library and library.category == 'competitors' %}selected{% endif %}>Competitors</option>
+                <option value="products" {% if library and library.category == 'products' %}selected{% endif %}>Products</option>
+            </select>
+        </div>
+        
+        {% if library %}
+        <div class="form-group checkbox-group">
+            <label>
+                <input type="checkbox" name="is_active" {% if library.is_active %}checked{% endif %}>
+                Library is active (keywords will be tracked)
+            </label>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="form-section">
+        <h3>Keywords</h3>
+        <p class="hint">Enter keywords or phrases, one per line. These will be matched in call transcripts.</p>
+        
+        <div class="form-group">
+            <label for="keywords">Keywords *</label>
+            <textarea id="keywords" name="keywords" rows="10" placeholder="too expensive
+not in the budget
+need to think about it
+already using competitor
+...">{% if library %}{% for kw in library.keywords %}{{ kw }}
+{% endfor %}{% endif %}</textarea>
+        </div>
+        
+        <div class="keyword-tips">
+            <h4>Tips:</h4>
+            <ul>
+                <li>Use lowercase for case-insensitive matching</li>
+                <li>Include common variations (e.g., "too expensive" and "too costly")</li>
+                <li>Phrases work better than single words for accuracy</li>
+                <li>Add competitor names specific to your industry</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{ 'Update' if library else 'Create' }} Library</button>
+        <a href="{{ url_for('keywords') }}" class="btn btn-outline">Cancel</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block styles %}
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.library-form {
+    max-width: 700px;
+}
+
+.form-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.form-section h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+}
+
+.hint {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.form-group input[type="text"],
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    background: var(--bg);
+}
+
+.form-group textarea {
+    font-family: monospace;
+    line-height: 1.6;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+}
+
+.keyword-tips {
+    background: var(--bg);
+    padding: 16px;
+    border-radius: var(--radius-sm);
+    margin-top: 16px;
+}
+
+.keyword-tips h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+}
+
+.keyword-tips ul {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.keyword-tips li {
+    margin-bottom: 4px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+}
+</style>
+{% endblock %}
+

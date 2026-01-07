@@ -19,6 +19,16 @@
                     <a href="{{ url_for('team') }}" class="nav-link">Team</a>
                     <a href="{{ url_for('history') }}" class="nav-link">History</a>
                     <a href="{{ url_for('upload') }}" class="nav-link">Upload</a>
+                    <a href="{{ url_for('rubrics') }}" class="nav-link">Rubrics</a>
+                    <a href="{{ url_for('keywords') }}" class="nav-link">Keywords</a>
+                    <a href="{{ url_for('playlists') }}" class="nav-link">Playlists</a>
+                    <div class="nav-dropdown">
+                        <button class="nav-link dropdown-toggle">Developers ▾</button>
+                        <div class="dropdown-menu">
+                            <a href="{{ url_for('api_keys') }}" class="dropdown-item">🔑 API Keys</a>
+                            <a href="{{ url_for('webhooks') }}" class="dropdown-item">🔔 Webhooks</a>
+                        </div>
+                    </div>
                     <span class="user-email">{{ session.user_email }}</span>
                     <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline">Logout</a>
                 {% endif %}

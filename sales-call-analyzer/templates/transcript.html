@@ -17,6 +17,31 @@
         </div>
     </div>
 
+    <!-- Visual Timeline -->
+    {% if segments %}
+    <div class="timeline-container">
+        <h4>Conversation Timeline</h4>
+        <div class="timeline-bar" id="timeline-bar">
+            {% set total_duration = segments[-1].end if segments else 1 %}
+            {% for segment in segments %}
+            {% set left_pct = (segment.start / total_duration * 100) %}
+            {% set width_pct = ((segment.end - segment.start) / total_duration * 100) %}
+            <div 
+                class="timeline-segment {{ 'agent' if segment.speaker == 'spk_0' else 'customer' }}"
+                style="left: {{ left_pct }}%; width: {{ width_pct }}%;"
+                data-start="{{ segment.start }}"
+                title="{{ segment.speaker }}: {{ segment.text[:50] }}..."
+            ></div>
+            {% endfor %}
+        </div>
+        <div class="timeline-legend">
+            <span class="legend-item agent"><span class="legend-dot"></span> Rep</span>
+            <span class="legend-item customer"><span class="legend-dot"></span> Customer</span>
+            <span class="timeline-duration">{{ ((segments[-1].end or 0) / 60)|round(1) }} min</span>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Search and Controls -->
     <div class="transcript-controls">
         <div class="search-box">
@@ -66,12 +91,18 @@
                     </button>
                     {% endif %}
                     {% if segment.speaker %}
-                    <span class="speaker-label">{{ segment.speaker }}</span>
+                    <span class="speaker-label {{ 'agent' if segment.speaker == 'spk_0' else 'customer' }}">
+                        {{ 'Rep' if segment.speaker == 'spk_0' else 'Customer' }}
+                    </span>
                     {% endif %}
+                    <button class="add-note-btn" data-segment-id="{{ loop.index0 }}" data-time="{{ segment.start }}" title="Add coaching note">
+                        💬
+                    </button>
                 </div>
                 <div class="segment-text" data-text="{{ segment.text|lower }}">
                     {{ segment.text }}
                 </div>
+                <div class="segment-notes" id="notes-{{ loop.index0 }}"></div>
             </div>
             {% endfor %}
         {% else %}
@@ -80,6 +111,22 @@
                 {{ redacted_text }}
             </div>
         {% endif %}
+    </div>
+
+    <!-- Coaching Notes Panel -->
+    <div class="coaching-panel" id="coaching-panel">
+        <div class="panel-header">
+            <h3>Coaching Notes</h3>
+            <button class="panel-close" onclick="toggleCoachingPanel()">&times;</button>
+        </div>
+        <div class="panel-content">
+            <div id="notes-list"></div>
+            <form id="note-form" class="note-form">
+                <input type="hidden" id="note-timestamp" name="timestamp_sec">
+                <textarea id="note-text" placeholder="Add a coaching note..." rows="3"></textarea>
+                <button type="submit" class="btn btn-primary btn-sm">Add Note</button>
+            </form>
+        </div>
     </div>
 
     <!-- Timestamp Highlights from Analysis -->
@@ -93,6 +140,24 @@
         </ul>
     </div>
     {% endif %}
+</div>
+
+<!-- Note Modal -->
+<div class="modal" id="note-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Add Coaching Note</h3>
+            <button class="modal-close" onclick="closeNoteModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-timestamp" id="modal-timestamp-display"></p>
+            <textarea id="modal-note-text" placeholder="Enter your coaching feedback..." rows="4"></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeNoteModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveNote()">Save Note</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -278,6 +343,167 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// Timeline click navigation
+document.querySelectorAll('.timeline-segment').forEach(seg => {
+    seg.addEventListener('click', function() {
+        const startTime = parseFloat(this.getAttribute('data-start'));
+        // Find matching transcript segment
+        const segments = document.querySelectorAll('.transcript-segment');
+        for (const segment of segments) {
+            const segStart = parseFloat(segment.getAttribute('data-start'));
+            if (Math.abs(segStart - startTime) < 1) {
+                segment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                segment.classList.add('timestamp-highlight');
+                setTimeout(() => segment.classList.remove('timestamp-highlight'), 2000);
+                break;
+            }
+        }
+    });
+});
+
+// Coaching Notes functionality
+const jobId = "{{ job.id }}";
+let currentNoteTime = null;
+let annotations = [];
+
+// Load existing annotations
+async function loadAnnotations() {
+    try {
+        const response = await fetch(`/api/annotations/${jobId}`);
+        if (response.ok) {
+            const data = await response.json();
+            annotations = data.annotations || [];
+            renderAnnotations();
+        }
+    } catch (e) {
+        console.error('Failed to load annotations:', e);
+    }
+}
+
+function renderAnnotations() {
+    // Clear all inline notes
+    document.querySelectorAll('.segment-notes').forEach(el => el.innerHTML = '');
+    
+    // Add annotations to appropriate segments
+    annotations.forEach(ann => {
+        const time = ann.timestamp_sec;
+        // Find closest segment
+        let closestSegment = null;
+        let closestDiff = Infinity;
+        
+        document.querySelectorAll('.transcript-segment').forEach(seg => {
+            const start = parseFloat(seg.getAttribute('data-start'));
+            const end = parseFloat(seg.getAttribute('data-end'));
+            if (time >= start && time <= end) {
+                closestSegment = seg;
+                closestDiff = 0;
+            } else if (Math.abs(start - time) < closestDiff) {
+                closestSegment = seg;
+                closestDiff = Math.abs(start - time);
+            }
+        });
+        
+        if (closestSegment) {
+            const notesContainer = closestSegment.querySelector('.segment-notes');
+            if (notesContainer) {
+                const noteEl = document.createElement('div');
+                noteEl.className = 'inline-note';
+                noteEl.innerHTML = `
+                    <span class="note-icon">💬</span>
+                    <span class="note-text">${escapeHtml(ann.note)}</span>
+                    <button class="note-delete" data-id="${ann.id}" title="Delete">&times;</button>
+                `;
+                notesContainer.appendChild(noteEl);
+            }
+        }
+    });
+    
+    // Add delete handlers
+    document.querySelectorAll('.note-delete').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const annId = this.getAttribute('data-id');
+            await deleteAnnotation(annId);
+        });
+    });
+}
+
+// Add note button handlers
+document.querySelectorAll('.add-note-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const time = parseFloat(this.getAttribute('data-time'));
+        openNoteModal(time);
+    });
+});
+
+function openNoteModal(time) {
+    currentNoteTime = time;
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    document.getElementById('modal-timestamp-display').textContent = 
+        `At ${minutes}:${seconds.toString().padStart(2, '0')}`;
+    document.getElementById('modal-note-text').value = '';
+    document.getElementById('note-modal').classList.add('show');
+}
+
+function closeNoteModal() {
+    document.getElementById('note-modal').classList.remove('show');
+    currentNoteTime = null;
+}
+
+async function saveNote() {
+    const noteText = document.getElementById('modal-note-text').value.trim();
+    if (!noteText) return;
+    
+    try {
+        const response = await fetch(`/api/annotations/${jobId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                note: noteText,
+                timestamp_sec: currentNoteTime
+            })
+        });
+        
+        if (response.ok) {
+            closeNoteModal();
+            await loadAnnotations();
+        }
+    } catch (e) {
+        console.error('Failed to save annotation:', e);
+    }
+}
+
+async function deleteAnnotation(annId) {
+    if (!confirm('Delete this note?')) return;
+    
+    try {
+        const response = await fetch(`/api/annotations/${annId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            await loadAnnotations();
+        }
+    } catch (e) {
+        console.error('Failed to delete annotation:', e);
+    }
+}
+
+// Toggle coaching panel
+function toggleCoachingPanel() {
+    document.getElementById('coaching-panel').classList.toggle('show');
+}
+
+// Load annotations on page load
+loadAnnotations();
+
+// Close modal on escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeNoteModal();
+    }
+});
 </script>
 
 <style>
@@ -482,6 +708,274 @@ function escapeHtml(text) {
     background: var(--bg);
     border-left: 3px solid var(--primary);
     border-radius: var(--radius-sm);
+}
+
+/* Timeline Styles */
+.timeline-container {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.timeline-container h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.timeline-bar {
+    position: relative;
+    height: 24px;
+    background: #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.timeline-segment {
+    position: absolute;
+    height: 100%;
+    min-width: 2px;
+    transition: opacity 0.2s;
+}
+
+.timeline-segment:hover {
+    opacity: 0.8;
+}
+
+.timeline-segment.agent {
+    background: var(--primary);
+}
+
+.timeline-segment.customer {
+    background: #64748b;
+}
+
+.timeline-legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.legend-item.agent .legend-dot {
+    background: var(--primary);
+}
+
+.legend-item.customer .legend-dot {
+    background: #64748b;
+}
+
+.timeline-duration {
+    margin-left: auto;
+    font-weight: 600;
+}
+
+/* Speaker Labels */
+.speaker-label.agent {
+    background: var(--primary);
+    color: white;
+}
+
+.speaker-label.customer {
+    background: #64748b;
+    color: white;
+}
+
+/* Add Note Button */
+.add-note-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.3;
+    font-size: 14px;
+    padding: 4px;
+    transition: opacity 0.2s;
+}
+
+.transcript-segment:hover .add-note-btn {
+    opacity: 1;
+}
+
+.add-note-btn:hover {
+    transform: scale(1.2);
+}
+
+/* Segment Notes */
+.segment-notes {
+    margin-top: 8px;
+}
+
+.inline-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+    padding: 8px 12px;
+    margin-top: 8px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+}
+
+.inline-note .note-icon {
+    flex-shrink: 0;
+}
+
+.inline-note .note-text {
+    flex: 1;
+    color: #92400e;
+}
+
+.inline-note .note-delete {
+    background: none;
+    border: none;
+    color: #92400e;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    opacity: 0.5;
+}
+
+.inline-note .note-delete:hover {
+    opacity: 1;
+}
+
+/* Note Modal */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.show {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-timestamp {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.modal-body textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    resize: vertical;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+}
+
+/* Coaching Panel (side panel) */
+.coaching-panel {
+    position: fixed;
+    right: -400px;
+    top: 0;
+    width: 400px;
+    height: 100vh;
+    background: var(--card-bg);
+    border-left: 1px solid var(--border);
+    box-shadow: -5px 0 25px rgba(0,0,0,0.1);
+    z-index: 100;
+    transition: right 0.3s ease;
+}
+
+.coaching-panel.show {
+    right: 0;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.panel-header h3 {
+    margin: 0;
+}
+
+.panel-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+}
+
+.panel-content {
+    padding: 20px;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
 }
 </style>
 {% endblock %}

@@ -20,6 +20,51 @@
         </div>
     </div>
 
+    <!-- Overall Score Card -->
+    {% if call_score and call_score.overall_score is not none %}
+    <div class="score-card">
+        <div class="score-main">
+            <div class="score-circle {% if call_score.overall_score >= 80 %}score-excellent{% elif call_score.overall_score >= 60 %}score-good{% elif call_score.overall_score >= 40 %}score-fair{% else %}score-needs-work{% endif %}">
+                <span class="score-value">{{ call_score.overall_score|round|int }}</span>
+                <span class="score-label">Overall Score</span>
+            </div>
+            <div class="score-summary">
+                <p>{{ call_score.summary or 'Score generated based on your rubric criteria.' }}</p>
+                {% if call_score.top_strength %}
+                <div class="score-highlight strength">
+                    <strong>💪 Top Strength:</strong> {{ call_score.top_strength }}
+                </div>
+                {% endif %}
+                {% if call_score.top_improvement %}
+                <div class="score-highlight improvement">
+                    <strong>📈 Focus Area:</strong> {{ call_score.top_improvement }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if score_criteria %}
+        <div class="score-breakdown">
+            <h4>Score Breakdown</h4>
+            <div class="criteria-scores">
+                {% for c in score_criteria %}
+                <div class="criterion-score">
+                    <div class="criterion-info">
+                        <span class="criterion-name">{{ c.name }}</span>
+                        <span class="criterion-weight">{{ c.weight }}%</span>
+                    </div>
+                    <div class="criterion-bar-container">
+                        <div class="criterion-bar" style="width: {{ (c.score / c.max_score * 100)|round }}%"></div>
+                    </div>
+                    <span class="criterion-score-value">{{ c.score }}/{{ c.max_score }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Percentile Rankings -->
     {% if rankings %}
     <div class="rankings-section">
@@ -153,6 +198,128 @@
                 </tr>
             </table>
         </section>
+        
+        <!-- Conversation Intelligence -->
+        {% if stats.conversation_intelligence %}
+        {% set conv_intel = stats.conversation_intelligence %}
+        <section class="report-section full-width">
+            <h2>🧠 Conversation Intelligence</h2>
+            
+            <div class="intel-grid">
+                <!-- Talk Ratio -->
+                {% if conv_intel.talk_patterns %}
+                <div class="intel-card">
+                    <h4>Talk Ratio</h4>
+                    <div class="talk-ratio-bar">
+                        <div class="ratio-segment agent" style="width: {{ conv_intel.talk_patterns.agent_talk_ratio }}%">
+                            {{ conv_intel.talk_patterns.agent_talk_ratio }}%
+                        </div>
+                        <div class="ratio-segment customer" style="width: {{ conv_intel.talk_patterns.customer_talk_ratio }}%">
+                            {{ conv_intel.talk_patterns.customer_talk_ratio }}%
+                        </div>
+                    </div>
+                    <div class="ratio-labels">
+                        <span>Rep</span>
+                        <span>Customer</span>
+                    </div>
+                    <div class="ratio-assessment {{ conv_intel.talk_patterns.assessment }}">
+                        {% if conv_intel.talk_patterns.assessment == 'balanced' %}
+                        ✅ Balanced conversation
+                        {% elif conv_intel.talk_patterns.assessment == 'agent_dominated' %}
+                        ⚠️ Rep talked too much - aim for more listening
+                        {% elif conv_intel.talk_patterns.assessment == 'slightly_high' %}
+                        💡 Consider letting customer talk more
+                        {% elif conv_intel.talk_patterns.assessment == 'customer_dominated' %}
+                        ✅ Great listening! Customer was engaged
+                        {% else %}
+                        {{ conv_intel.talk_patterns.assessment|replace('_', ' ')|title }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Questions -->
+                {% if conv_intel.questions %}
+                <div class="intel-card">
+                    <h4>Question Analysis</h4>
+                    <div class="question-stats">
+                        <div class="q-stat">
+                            <span class="q-value">{{ conv_intel.questions.total_questions }}</span>
+                            <span class="q-label">Total Questions</span>
+                        </div>
+                        <div class="q-stat">
+                            <span class="q-value">{{ conv_intel.questions.open_questions }}</span>
+                            <span class="q-label">Open-ended</span>
+                        </div>
+                        <div class="q-stat">
+                            <span class="q-value">{{ conv_intel.questions.discovery_questions }}</span>
+                            <span class="q-label">Discovery</span>
+                        </div>
+                    </div>
+                    <div class="q-assessment {{ conv_intel.questions.quality_assessment }}">
+                        {% if conv_intel.questions.quality_assessment == 'good' %}
+                        ✅ Good questioning technique
+                        {% elif conv_intel.questions.quality_assessment == 'too_few' %}
+                        ⚠️ Ask more questions to uncover needs
+                        {% elif conv_intel.questions.quality_assessment == 'too_many_closed' %}
+                        💡 Use more open-ended questions
+                        {% elif conv_intel.questions.quality_assessment == 'needs_discovery' %}
+                        💡 Add more discovery questions
+                        {% else %}
+                        {{ conv_intel.questions.quality_assessment|replace('_', ' ')|title }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Engagement -->
+                {% if conv_intel.engagement %}
+                <div class="intel-card">
+                    <h4>Customer Engagement</h4>
+                    <div class="engagement-score {{ conv_intel.engagement.level }}">
+                        <span class="score">{{ conv_intel.engagement.score }}</span>
+                        <span class="level">{{ conv_intel.engagement.level|title }}</span>
+                    </div>
+                    <div class="engagement-details">
+                        <span>+{{ conv_intel.engagement.positive_signals }} positive signals</span>
+                        <span>{{ conv_intel.engagement.customer_questions }} customer questions</span>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Objections -->
+                {% if conv_intel.objections and conv_intel.objections.count > 0 %}
+                <div class="intel-card">
+                    <h4>Objections Detected</h4>
+                    <div class="objection-count">{{ conv_intel.objections.count }}</div>
+                    <div class="objection-types">
+                        {% for type in conv_intel.objections.types %}
+                        <span class="objection-tag">{{ type }}</span>
+                        {% endfor %}
+                    </div>
+                    <div class="objection-handling {{ conv_intel.objections.handling_assessment }}">
+                        {% if conv_intel.objections.handling_assessment == 'addressed' %}
+                        ✅ All objections addressed
+                        {% elif conv_intel.objections.handling_assessment == 'partially_addressed' %}
+                        💡 Some objections need follow-up
+                        {% else %}
+                        ⚠️ Objections not fully addressed
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Monologues Warning -->
+            {% if conv_intel.monologues and conv_intel.monologues.count > 0 %}
+            <div class="monologue-warning">
+                ⚠️ <strong>{{ conv_intel.monologues.count }} long monologue(s) detected</strong> 
+                ({{ conv_intel.monologues.total_time_sec|round|int }}s total).
+                Try to engage the customer more frequently.
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
     </div>
 
     <div class="report-footer">
@@ -163,6 +330,156 @@
 
 {% block scripts %}
 <style>
+/* Score Card Styles */
+.score-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.score-main {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    margin-bottom: 24px;
+}
+
+.score-circle {
+    flex-shrink: 0;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #f0f0f0, #e0e0e0);
+    border: 4px solid;
+}
+
+.score-circle.score-excellent {
+    border-color: #22c55e;
+    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+}
+
+.score-circle.score-good {
+    border-color: #3b82f6;
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+}
+
+.score-circle.score-fair {
+    border-color: #f59e0b;
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+}
+
+.score-circle.score-needs-work {
+    border-color: #ef4444;
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+}
+
+.score-value {
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.score-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.score-summary {
+    flex: 1;
+}
+
+.score-summary p {
+    margin: 0 0 16px 0;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+.score-highlight {
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.score-highlight.strength {
+    background: #dcfce7;
+    border-left: 3px solid #22c55e;
+}
+
+.score-highlight.improvement {
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+}
+
+.score-breakdown h4 {
+    margin: 0 0 16px 0;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+}
+
+.criteria-scores {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.criterion-score {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.criterion-info {
+    width: 200px;
+    flex-shrink: 0;
+}
+
+.criterion-name {
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.criterion-weight {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: 8px;
+}
+
+.criterion-bar-container {
+    flex: 1;
+    height: 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.criterion-bar {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.criterion-score-value {
+    width: 50px;
+    text-align: right;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+/* Rankings Section */
 .rankings-section {
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -203,6 +520,239 @@
     font-size: 18px;
     font-weight: 700;
     color: var(--primary);
+}
+
+@media (max-width: 768px) {
+    .score-main {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    
+    .criterion-info {
+        width: 120px;
+    }
+}
+
+/* Conversation Intelligence Styles */
+.intel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.intel-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+}
+
+.intel-card h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+}
+
+/* Talk Ratio Bar */
+.talk-ratio-bar {
+    display: flex;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.ratio-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: white;
+    min-width: 40px;
+}
+
+.ratio-segment.agent {
+    background: var(--primary);
+}
+
+.ratio-segment.customer {
+    background: #64748b;
+}
+
+.ratio-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.ratio-assessment {
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    text-align: center;
+}
+
+.ratio-assessment.balanced,
+.ratio-assessment.customer_dominated {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.ratio-assessment.agent_dominated {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.ratio-assessment.slightly_high,
+.ratio-assessment.slightly_low {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+/* Question Stats */
+.question-stats {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.q-stat {
+    text-align: center;
+}
+
+.q-value {
+    display: block;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.q-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.q-assessment {
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    text-align: center;
+}
+
+.q-assessment.good {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.q-assessment.too_few,
+.q-assessment.too_many_closed,
+.q-assessment.needs_discovery,
+.q-assessment.too_many_leading {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+/* Engagement Score */
+.engagement-score {
+    text-align: center;
+    padding: 16px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 12px;
+}
+
+.engagement-score.high {
+    background: #dcfce7;
+}
+
+.engagement-score.medium {
+    background: #fef3c7;
+}
+
+.engagement-score.low {
+    background: #fee2e2;
+}
+
+.engagement-score .score {
+    display: block;
+    font-size: 36px;
+    font-weight: 700;
+}
+
+.engagement-score .level {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.engagement-details {
+    display: flex;
+    justify-content: space-around;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Objections */
+.objection-count {
+    font-size: 32px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.objection-types {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 12px;
+}
+
+.objection-tag {
+    padding: 4px 8px;
+    background: #f1f5f9;
+    border-radius: 12px;
+    font-size: 11px;
+    text-transform: capitalize;
+}
+
+.objection-handling {
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    text-align: center;
+}
+
+.objection-handling.addressed {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.objection-handling.partially_addressed {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.objection-handling.not_addressed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Monologue Warning */
+.monologue-warning {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
 }
 </style>
 {% endblock %}

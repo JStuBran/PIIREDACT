@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if rubric else 'New' }} Rubric - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ 'Edit' if rubric else 'Create New' }} Rubric</h1>
+        <p class="subtitle">Define scoring criteria for sales call evaluation</p>
+    </div>
+    <a href="{{ url_for('rubrics') }}" class="btn btn-outline">Cancel</a>
+</div>
+
+<form method="POST" class="rubric-form" id="rubricForm">
+    <div class="form-section">
+        <h3>Basic Information</h3>
+        
+        <div class="form-group">
+            <label for="name">Rubric Name *</label>
+            <input type="text" id="name" name="name" value="{{ rubric.name if rubric else '' }}" required placeholder="e.g., Discovery Call Rubric">
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" rows="2" placeholder="Brief description of when to use this rubric">{{ rubric.description if rubric else '' }}</textarea>
+        </div>
+        
+        <div class="form-group checkbox-group">
+            <label>
+                <input type="checkbox" name="is_default" {% if rubric and rubric.is_default %}checked{% endif %}>
+                Set as default rubric for new calls
+            </label>
+        </div>
+    </div>
+    
+    <div class="form-section">
+        <div class="section-header">
+            <h3>Scoring Criteria</h3>
+            <button type="button" class="btn btn-outline btn-sm" onclick="addCriterion()">+ Add Criterion</button>
+        </div>
+        <p class="hint">Weights should sum to 100%. Each criterion is scored 0-5 by default.</p>
+        
+        <div id="criteriaContainer">
+            {% for c in criteria %}
+            <div class="criterion-card" data-index="{{ loop.index0 }}">
+                <div class="criterion-header">
+                    <span class="drag-handle">⋮⋮</span>
+                    <input type="hidden" name="criteria_{{ loop.index0 }}_id" value="{{ c.id }}">
+                    <input type="text" name="criteria_{{ loop.index0 }}_name" value="{{ c.name }}" placeholder="Criterion name" required class="criterion-name-input">
+                    <button type="button" class="btn-icon remove-btn" onclick="removeCriterion(this)" title="Remove">&times;</button>
+                </div>
+                <div class="criterion-body">
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea name="criteria_{{ loop.index0 }}_description" rows="2" placeholder="What does this criterion measure?">{{ c.description }}</textarea>
+                    </div>
+                    <div class="criterion-metrics">
+                        <div class="form-group">
+                            <label>Weight (%)</label>
+                            <input type="number" name="criteria_{{ loop.index0 }}_weight" value="{{ c.weight }}" min="1" max="100" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Max Score</label>
+                            <input type="number" name="criteria_{{ loop.index0 }}_max_score" value="{{ c.max_score }}" min="1" max="10" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="weight-summary">
+            <span>Total Weight: </span>
+            <span id="totalWeight">0</span>%
+            <span id="weightWarning" class="warning" style="display: none;"> (should equal 100%)</span>
+        </div>
+    </div>
+    
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{ 'Update' if rubric else 'Create' }} Rubric</button>
+        <a href="{{ url_for('rubrics') }}" class="btn btn-outline">Cancel</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.rubric-form {
+    max-width: 800px;
+}
+
+.form-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.form-section h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.section-header h3 {
+    margin: 0;
+}
+
+.hint {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    background: var(--bg);
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+}
+
+#criteriaContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.criterion-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.criterion-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+}
+
+.drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+.criterion-name-input {
+    flex: 1;
+    font-weight: 600;
+}
+
+.btn-icon {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    border-radius: var(--radius-sm);
+}
+
+.btn-icon:hover {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+.criterion-body {
+    padding: 16px;
+}
+
+.criterion-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.criterion-metrics input {
+    text-align: center;
+}
+
+.weight-summary {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    font-weight: 600;
+}
+
+.weight-summary .warning {
+    color: #dc3545;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+</style>
+
+<script>
+let criterionIndex = {{ criteria|length }};
+
+function addCriterion() {
+    const container = document.getElementById('criteriaContainer');
+    const html = `
+        <div class="criterion-card" data-index="${criterionIndex}">
+            <div class="criterion-header">
+                <span class="drag-handle">⋮⋮</span>
+                <input type="hidden" name="criteria_${criterionIndex}_id" value="criterion_${criterionIndex}">
+                <input type="text" name="criteria_${criterionIndex}_name" placeholder="Criterion name" required class="criterion-name-input">
+                <button type="button" class="btn-icon remove-btn" onclick="removeCriterion(this)" title="Remove">&times;</button>
+            </div>
+            <div class="criterion-body">
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="criteria_${criterionIndex}_description" rows="2" placeholder="What does this criterion measure?"></textarea>
+                </div>
+                <div class="criterion-metrics">
+                    <div class="form-group">
+                        <label>Weight (%)</label>
+                        <input type="number" name="criteria_${criterionIndex}_weight" value="10" min="1" max="100" required onchange="updateTotalWeight()">
+                    </div>
+                    <div class="form-group">
+                        <label>Max Score</label>
+                        <input type="number" name="criteria_${criterionIndex}_max_score" value="5" min="1" max="10" required>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', html);
+    criterionIndex++;
+    updateTotalWeight();
+}
+
+function removeCriterion(btn) {
+    const card = btn.closest('.criterion-card');
+    card.remove();
+    reindexCriteria();
+    updateTotalWeight();
+}
+
+function reindexCriteria() {
+    const cards = document.querySelectorAll('.criterion-card');
+    cards.forEach((card, index) => {
+        card.dataset.index = index;
+        card.querySelectorAll('[name]').forEach(input => {
+            input.name = input.name.replace(/criteria_\d+_/, `criteria_${index}_`);
+        });
+    });
+    criterionIndex = cards.length;
+}
+
+function updateTotalWeight() {
+    const weights = document.querySelectorAll('[name$="_weight"]');
+    let total = 0;
+    weights.forEach(input => {
+        total += parseInt(input.value) || 0;
+    });
+    
+    document.getElementById('totalWeight').textContent = total;
+    const warning = document.getElementById('weightWarning');
+    if (total !== 100) {
+        warning.style.display = 'inline';
+    } else {
+        warning.style.display = 'none';
+    }
+}
+
+// Add event listeners for weight inputs
+document.addEventListener('DOMContentLoaded', function() {
+    updateTotalWeight();
+    document.querySelectorAll('[name$="_weight"]').forEach(input => {
+        input.addEventListener('change', updateTotalWeight);
+    });
+});
+</script>
+{% endblock %}
+

@@ -92,6 +92,45 @@ class BackgroundProcessor:
                 segments=transcription.get("segments", []),
             )
 
+            # Step 3.6: Conversation intelligence analysis
+            logger.info(f"[{job_id}] Running conversation intelligence...")
+            conv_intel_service = services.get("conversation_intel")
+            conv_intel = None
+            if conv_intel_service:
+                conv_intel = conv_intel_service.analyze(
+                    segments=transcription.get("segments", []),
+                    transcript=transcription["redacted_text"],
+                )
+            
+            # Step 3.7: Keyword tracking and call phase detection
+            logger.info(f"[{job_id}] Running keyword tracking...")
+            keyword_service = services.get("keyword_tracking")
+            keywords_data = None
+            call_phases = None
+            if keyword_service:
+                keywords_data = keyword_service.detect_keywords(
+                    call_id=job_id,
+                    transcript=transcription["redacted_text"],
+                    segments=transcription.get("segments", []),
+                    user_email=user_email,
+                    save_occurrences=True,
+                )
+                call_phases = keyword_service.detect_call_phases(
+                    segments=transcription.get("segments", []),
+                )
+            
+            # Step 3.8: Generate call score
+            logger.info(f"[{job_id}] Generating call score...")
+            scoring_service = services.get("scoring")
+            call_score = None
+            if scoring_service:
+                call_score = scoring_service.score_call(
+                    call_id=job_id,
+                    transcript=transcription["redacted_text"],
+                    stats=stats,
+                    user_email=user_email,
+                )
+
             # Step 4: Generate PDFs
             logger.info(f"[{job_id}] Generating PDFs...")
             db.update_call(job_id, status="generating_pdf")
@@ -116,6 +155,9 @@ class BackgroundProcessor:
 
             # Save all data to database
             stats["enhanced_analytics"] = enhanced_analytics
+            stats["conversation_intelligence"] = conv_intel
+            stats["keywords"] = keywords_data
+            stats["call_phases"] = call_phases
 
             # SECURITY: Remove original_text before storing in database
             # Only redacted data should be persisted
@@ -141,11 +183,47 @@ class BackgroundProcessor:
                 pass
 
             logger.info(f"[{job_id}] Analysis complete!")
+            
+            # Trigger webhook for completed call
+            self._trigger_webhook(
+                user_email=user_email,
+                event="call.completed",
+                payload={
+                    "call_id": job_id,
+                    "filename": filename,
+                    "status": "complete",
+                    "score": call_score.get("overall_score") if call_score else None,
+                    "duration_min": transcription.get("duration_min", 0),
+                }
+            )
 
         except Exception as e:
             logger.exception(f"[{job_id}] Analysis failed: {e}")
             db = services["database"]
             db.update_call(job_id, status="error", error=str(e))
+            
+            # Trigger webhook for failed call
+            self._trigger_webhook(
+                user_email=user_email,
+                event="call.failed",
+                payload={
+                    "call_id": job_id,
+                    "filename": filename,
+                    "error": str(e),
+                }
+            )
         finally:
             self._active_jobs.discard(job_id)
+    
+    def _trigger_webhook(self, user_email: str, event: str, payload: dict):
+        """Trigger webhooks for an event (non-blocking)."""
+        try:
+            from api_v1 import trigger_webhook
+            trigger_webhook(
+                user_email=user_email,
+                event=event,
+                payload=payload,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to trigger webhook: {e}")
 

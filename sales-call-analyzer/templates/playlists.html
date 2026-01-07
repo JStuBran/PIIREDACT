@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Coaching Playlists - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Coaching Playlists</h1>
+        <p class="subtitle">Curated collections of calls for training and review</p>
+    </div>
+    <a href="{{ url_for('create_playlist') }}" class="btn btn-primary">+ New Playlist</a>
+</div>
+
+<div class="playlists-grid">
+    {% for playlist in playlists %}
+    <div class="playlist-card">
+        <div class="playlist-header">
+            <h3>{{ playlist.name }}</h3>
+            <div class="playlist-meta">
+                {% if playlist.is_public %}
+                <span class="badge badge-public">Public</span>
+                {% endif %}
+                <span class="category-tag">{{ playlist.category or 'training' }}</span>
+            </div>
+        </div>
+        
+        {% if playlist.description %}
+        <p class="playlist-description">{{ playlist.description }}</p>
+        {% endif %}
+        
+        <div class="playlist-stats">
+            <div class="stat">
+                <span class="stat-value">{{ playlist.item_count or 0 }}</span>
+                <span class="stat-label">calls</span>
+            </div>
+        </div>
+        
+        <div class="playlist-actions">
+            <a href="{{ url_for('view_playlist', playlist_id=playlist.id) }}" class="btn btn-primary btn-sm">View</a>
+            {% if playlist.user_email == session.user_email %}
+            <a href="{{ url_for('edit_playlist', playlist_id=playlist.id) }}" class="btn btn-outline btn-sm">Edit</a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">📚</div>
+        <h3>No Playlists Yet</h3>
+        <p>Create your first playlist to organize calls for training.</p>
+        <a href="{{ url_for('create_playlist') }}" class="btn btn-primary">Create Playlist</a>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Quick Tips -->
+<div class="tips-section">
+    <h3>💡 Playlist Ideas</h3>
+    <div class="tips-grid">
+        <div class="tip-card">
+            <h4>🏆 Best Practices</h4>
+            <p>Curate your top-performing calls as examples for the team.</p>
+        </div>
+        <div class="tip-card">
+            <h4>📈 Before/After</h4>
+            <p>Show rep improvement over time with early vs. recent calls.</p>
+        </div>
+        <div class="tip-card">
+            <h4>🎯 Objection Handling</h4>
+            <p>Collect calls with great objection responses for training.</p>
+        </div>
+        <div class="tip-card">
+            <h4>🆕 Onboarding</h4>
+            <p>Required viewing for new hires to learn your sales process.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.page-header h1 {
+    margin: 0;
+}
+
+.subtitle {
+    color: var(--text-muted);
+    margin: 4px 0 0 0;
+}
+
+.playlists-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+}
+
+.playlist-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+
+.playlist-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.playlist-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.playlist-meta {
+    display: flex;
+    gap: 6px;
+}
+
+.badge {
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-public {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.category-tag {
+    padding: 4px 8px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    text-transform: capitalize;
+    color: var(--text-muted);
+}
+
+.playlist-description {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.playlist-stats {
+    display: flex;
+    gap: 24px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+}
+
+.stat {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.stat-label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.playlist-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    background: var(--card-bg);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+
+/* Tips Section */
+.tips-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+}
+
+.tips-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+}
+
+.tips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.tip-card {
+    background: var(--bg);
+    padding: 16px;
+    border-radius: var(--radius-sm);
+}
+
+.tip-card h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+}
+
+.tip-card p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+</style>
+{% endblock %}
+

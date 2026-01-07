@@ -31,36 +31,70 @@
         </div>
     </div>
 
-    <!-- Team Benchmarks -->
-    {% if benchmarks and benchmarks.total_calls > 0 %}
-    <div class="section">
-        <div class="section-header">
-            <h2>Team Benchmarks</h2>
+    <!-- Leaderboard and Team Benchmarks Row -->
+    <div class="dashboard-row">
+        <!-- Leaderboard -->
+        {% if leaderboard %}
+        <div class="section leaderboard-section">
+            <div class="section-header">
+                <h2>🏆 Score Leaderboard</h2>
+            </div>
+            <div class="leaderboard">
+                {% for rep in leaderboard %}
+                <div class="leaderboard-item {% if loop.index <= 3 %}top-three{% endif %}">
+                    <div class="rank">
+                        {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}
+                    </div>
+                    <div class="rep-info">
+                        <span class="rep-name">{{ rep.rep_name }}</span>
+                        <span class="rep-stats">{{ rep.call_count }} calls</span>
+                    </div>
+                    <div class="rep-score {% if rep.avg_score >= 80 %}score-excellent{% elif rep.avg_score >= 60 %}score-good{% else %}score-fair{% endif %}">
+                        {{ rep.avg_score }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% if score_trends and score_trends.improvement != 0 %}
+            <div class="trend-indicator {% if score_trends.improvement > 0 %}positive{% else %}negative{% endif %}">
+                {% if score_trends.improvement > 0 %}📈{% else %}📉{% endif %}
+                Team average {% if score_trends.improvement > 0 %}improved{% else %}declined{% endif %} by {{ score_trends.improvement|abs }} points
+            </div>
+            {% endif %}
         </div>
-        <div class="benchmarks-grid">
-            <div class="benchmark-item">
-                <div class="benchmark-label">Avg Duration</div>
-                <div class="benchmark-value">{{ benchmarks.avg_duration }} min</div>
-                <div class="benchmark-median">Median: {{ benchmarks.median_duration }} min</div>
+        {% endif %}
+
+        <!-- Team Benchmarks -->
+        {% if benchmarks and benchmarks.total_calls > 0 %}
+        <div class="section benchmarks-section">
+            <div class="section-header">
+                <h2>📊 Team Benchmarks</h2>
             </div>
-            <div class="benchmark-item">
-                <div class="benchmark-label">Avg Talk Ratio</div>
-                <div class="benchmark-value">{{ benchmarks.avg_talk_ratio }}%</div>
-                <div class="benchmark-median">Median: {{ benchmarks.median_talk_ratio }}%</div>
-            </div>
-            <div class="benchmark-item">
-                <div class="benchmark-label">Avg Questions</div>
-                <div class="benchmark-value">{{ benchmarks.avg_questions }}</div>
-                <div class="benchmark-median">{{ benchmarks.avg_questions_per_min }}/min</div>
-            </div>
-            <div class="benchmark-item">
-                <div class="benchmark-label">Avg Filler Words</div>
-                <div class="benchmark-value">{{ benchmarks.avg_filler_words }}</div>
-                <div class="benchmark-median">Per call</div>
+            <div class="benchmarks-grid">
+                <div class="benchmark-item">
+                    <div class="benchmark-label">Avg Duration</div>
+                    <div class="benchmark-value">{{ benchmarks.avg_duration }} min</div>
+                    <div class="benchmark-median">Median: {{ benchmarks.median_duration }} min</div>
+                </div>
+                <div class="benchmark-item">
+                    <div class="benchmark-label">Avg Talk Ratio</div>
+                    <div class="benchmark-value">{{ benchmarks.avg_talk_ratio }}%</div>
+                    <div class="benchmark-median">Median: {{ benchmarks.median_talk_ratio }}%</div>
+                </div>
+                <div class="benchmark-item">
+                    <div class="benchmark-label">Avg Questions</div>
+                    <div class="benchmark-value">{{ benchmarks.avg_questions }}</div>
+                    <div class="benchmark-median">{{ benchmarks.avg_questions_per_min }}/min</div>
+                </div>
+                <div class="benchmark-item">
+                    <div class="benchmark-label">Avg Filler Words</div>
+                    <div class="benchmark-value">{{ benchmarks.avg_filler_words }}</div>
+                    <div class="benchmark-median">Per call</div>
+                </div>
             </div>
         </div>
+        {% endif %}
     </div>
-    {% endif %}
 
     <!-- Recent Calls -->
     <div class="section">
@@ -391,6 +425,132 @@
 .benchmark-median {
     font-size: 12px;
     color: var(--text-muted);
+}
+
+/* Dashboard Row for Side-by-Side Sections */
+.dashboard-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+    .dashboard-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Leaderboard Styles */
+.leaderboard-section {
+    min-width: 0;
+}
+
+.leaderboard {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.leaderboard-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: transform 0.2s ease;
+}
+
+.leaderboard-item:hover {
+    transform: translateX(4px);
+}
+
+.leaderboard-item.top-three {
+    background: linear-gradient(135deg, #fef9c3, #fef3c7);
+    border-color: #fbbf24;
+}
+
+.leaderboard-item .rank {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.leaderboard-item.top-three .rank {
+    font-size: 22px;
+}
+
+.leaderboard-item .rep-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.leaderboard-item .rep-name {
+    display: block;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.leaderboard-item .rep-stats {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.leaderboard-item .rep-score {
+    font-size: 20px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    min-width: 60px;
+    text-align: center;
+}
+
+.rep-score.score-excellent {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.rep-score.score-good {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.rep-score.score-fair {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.trend-indicator {
+    margin-top: 12px;
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.trend-indicator.positive {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.trend-indicator.negative {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.benchmarks-section {
+    min-width: 0;
 }
 </style>
 {% endblock %}

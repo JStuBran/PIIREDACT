@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Scoring Rubrics - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Scoring Rubrics</h1>
+        <p class="subtitle">Define criteria for evaluating sales calls</p>
+    </div>
+    <a href="{{ url_for('create_rubric') }}" class="btn btn-primary">+ New Rubric</a>
+</div>
+
+<div class="rubrics-grid">
+    {% for rubric in rubrics %}
+    <div class="rubric-card {% if rubric.is_default %}is-default{% endif %}">
+        <div class="rubric-header">
+            <h3>{{ rubric.name }}</h3>
+            {% if rubric.is_default %}
+            <span class="badge badge-primary">Default</span>
+            {% endif %}
+        </div>
+        {% if rubric.description %}
+        <p class="rubric-description">{{ rubric.description }}</p>
+        {% endif %}
+        
+        <div class="criteria-preview">
+            <strong>{{ rubric.criteria|length }} Criteria:</strong>
+            <ul>
+                {% for criterion in rubric.criteria[:4] %}
+                <li>
+                    <span class="criterion-name">{{ criterion.name }}</span>
+                    <span class="criterion-weight">{{ criterion.weight }}%</span>
+                </li>
+                {% endfor %}
+                {% if rubric.criteria|length > 4 %}
+                <li class="more">+ {{ rubric.criteria|length - 4 }} more...</li>
+                {% endif %}
+            </ul>
+        </div>
+        
+        <div class="rubric-actions">
+            <a href="{{ url_for('edit_rubric', rubric_id=rubric.id) }}" class="btn btn-outline btn-sm">Edit</a>
+            {% if not rubric.is_default %}
+            <form action="{{ url_for('delete_rubric', rubric_id=rubric.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete this rubric?')">
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No rubrics found. Create your first rubric to start scoring calls.</p>
+        <a href="{{ url_for('create_rubric') }}" class="btn btn-primary">Create Rubric</a>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.page-header h1 {
+    margin: 0;
+}
+
+.subtitle {
+    color: var(--text-muted);
+    margin: 4px 0 0 0;
+}
+
+.rubrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+}
+
+.rubric-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+
+.rubric-card.is-default {
+    border-color: var(--primary);
+    border-width: 2px;
+}
+
+.rubric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.rubric-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.badge {
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.rubric-description {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.criteria-preview {
+    background: var(--bg);
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 16px;
+}
+
+.criteria-preview strong {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.criteria-preview ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.criteria-preview li {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 14px;
+}
+
+.criteria-preview li.more {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.criterion-weight {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.rubric-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    background: var(--card-bg);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+</style>
+{% endblock %}
+

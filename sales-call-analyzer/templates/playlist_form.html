@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if playlist else 'New' }} Playlist - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ 'Edit' if playlist else 'Create New' }} Playlist</h1>
+        <p class="subtitle">Organize calls for training and review</p>
+    </div>
+    <a href="{{ url_for('playlists') }}" class="btn btn-outline">Cancel</a>
+</div>
+
+<form method="POST" class="playlist-form">
+    <div class="form-section">
+        <h3>Playlist Details</h3>
+        
+        <div class="form-group">
+            <label for="name">Playlist Name *</label>
+            <input type="text" id="name" name="name" value="{{ playlist.name if playlist else '' }}" required placeholder="e.g., New Hire Onboarding">
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" rows="3" placeholder="What is this playlist for?">{{ playlist.description if playlist else '' }}</textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category" name="category">
+                <option value="training" {% if not playlist or playlist.category == 'training' %}selected{% endif %}>Training</option>
+                <option value="onboarding" {% if playlist and playlist.category == 'onboarding' %}selected{% endif %}>Onboarding</option>
+                <option value="best_practices" {% if playlist and playlist.category == 'best_practices' %}selected{% endif %}>Best Practices</option>
+                <option value="objections" {% if playlist and playlist.category == 'objections' %}selected{% endif %}>Objection Handling</option>
+                <option value="review" {% if playlist and playlist.category == 'review' %}selected{% endif %}>Peer Review</option>
+                <option value="other" {% if playlist and playlist.category == 'other' %}selected{% endif %}>Other</option>
+            </select>
+        </div>
+        
+        <div class="form-group checkbox-group">
+            <label>
+                <input type="checkbox" name="is_public" {% if playlist and playlist.is_public %}checked{% endif %}>
+                Make this playlist public (visible to all team members)
+            </label>
+        </div>
+    </div>
+    
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{ 'Update' if playlist else 'Create' }} Playlist</button>
+        <a href="{{ url_for('playlists') }}" class="btn btn-outline">Cancel</a>
+    </div>
+</form>
+
+{% if playlist %}
+<div class="danger-zone">
+    <h3>Danger Zone</h3>
+    <p>Deleting this playlist will remove all items and progress tracking.</p>
+    <form action="{{ url_for('delete_playlist', playlist_id=playlist.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this playlist?')">
+        <button type="submit" class="btn btn-danger">Delete Playlist</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block styles %}
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.playlist-form {
+    max-width: 600px;
+}
+
+.form-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.form-section h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.form-group input[type="text"],
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    background: var(--bg);
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.danger-zone {
+    max-width: 600px;
+    margin-top: 40px;
+    padding: 24px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: var(--radius);
+}
+
+.danger-zone h3 {
+    color: #991b1b;
+    margin: 0 0 8px 0;
+    font-size: 16px;
+}
+
+.danger-zone p {
+    color: #7f1d1d;
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+</style>
+{% endblock %}
+

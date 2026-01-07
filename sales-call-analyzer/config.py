@@ -5,6 +5,11 @@ from typing import List
 
 
 class Config:
+    # Celery configuration
+    CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+    USE_CELERY = os.environ.get("USE_CELERY", "false").lower() == "true"
+    
     """Application configuration from environment variables."""
 
     # Flask - SECRET_KEY is required in production

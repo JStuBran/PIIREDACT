@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+
+{% block title %}Keyword Libraries - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Keyword Tracking</h1>
+        <p class="subtitle">Track objections, buying signals, competitors, and more</p>
+    </div>
+    <a href="{{ url_for('create_keyword_library') }}" class="btn btn-primary">+ New Library</a>
+</div>
+
+<!-- Keyword Trends -->
+{% if trends and trends.by_library %}
+<div class="trends-section">
+    <h3>Top Keywords Detected</h3>
+    <div class="trends-grid">
+        {% for lib_name, keywords in trends.by_library.items() %}
+        <div class="trend-card">
+            <h4>{{ lib_name }}</h4>
+            <div class="keyword-list">
+                {% for kw in keywords[:5] %}
+                <div class="keyword-item">
+                    <span class="keyword-text">{{ kw.keyword }}</span>
+                    <span class="keyword-count">{{ kw.count }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Keyword Libraries -->
+<div class="libraries-section">
+    <h3>Your Keyword Libraries</h3>
+    <div class="libraries-grid">
+        {% for lib in libraries %}
+        <div class="library-card {% if not lib.is_active %}inactive{% endif %}">
+            <div class="library-header">
+                <h4>{{ lib.name }}</h4>
+                {% if lib.category %}
+                <span class="category-badge">{{ lib.category }}</span>
+                {% endif %}
+            </div>
+            
+            <div class="keywords-preview">
+                {% for kw in lib.keywords[:8] %}
+                <span class="keyword-tag">{{ kw }}</span>
+                {% endfor %}
+                {% if lib.keywords|length > 8 %}
+                <span class="keyword-more">+{{ lib.keywords|length - 8 }} more</span>
+                {% endif %}
+            </div>
+            
+            <div class="library-footer">
+                <span class="keyword-count">{{ lib.keywords|length }} keywords</span>
+                {% if not lib.is_active %}
+                <span class="inactive-badge">Inactive</span>
+                {% endif %}
+            </div>
+            
+            <div class="library-actions">
+                <a href="{{ url_for('edit_keyword_library', library_id=lib.id) }}" class="btn btn-outline btn-sm">Edit</a>
+                <form action="{{ url_for('delete_keyword_library', library_id=lib.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete this library?')">
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No keyword libraries found. Create your first library to start tracking.</p>
+            <a href="{{ url_for('create_keyword_library') }}" class="btn btn-primary">Create Library</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Quick Add Section -->
+<div class="quick-add-section">
+    <h3>Suggested Libraries</h3>
+    <p class="hint">Click to add pre-built keyword libraries to your account.</p>
+    <div class="suggestions">
+        <button class="suggestion-btn" onclick="alert('Coming soon!')">
+            🏢 Competitor Names
+        </button>
+        <button class="suggestion-btn" onclick="alert('Coming soon!')">
+            💰 Pricing Keywords
+        </button>
+        <button class="suggestion-btn" onclick="alert('Coming soon!')">
+            🎯 Product Features
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.page-header h1 {
+    margin: 0;
+}
+
+.subtitle {
+    color: var(--text-muted);
+    margin: 4px 0 0 0;
+}
+
+/* Trends Section */
+.trends-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.trends-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+}
+
+.trends-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+}
+
+.trend-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+}
+
+.trend-card h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.keyword-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.keyword-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: var(--card-bg);
+    border-radius: var(--radius-sm);
+}
+
+.keyword-text {
+    font-size: 14px;
+}
+
+.keyword-count {
+    font-weight: 600;
+    color: var(--primary);
+    font-size: 14px;
+}
+
+/* Libraries Section */
+.libraries-section {
+    margin-bottom: 24px;
+}
+
+.libraries-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+}
+
+.libraries-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.library-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+
+.library-card.inactive {
+    opacity: 0.6;
+}
+
+.library-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.library-header h4 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.category-badge {
+    padding: 4px 8px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.keywords-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.keyword-tag {
+    padding: 4px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 12px;
+}
+
+.keyword-more {
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.library-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.inactive-badge {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.library-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+/* Quick Add Section */
+.quick-add-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+}
+
+.quick-add-section h3 {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+}
+
+.hint {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.suggestion-btn {
+    padding: 12px 20px;
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.suggestion-btn:hover {
+    border-style: solid;
+    border-color: var(--primary);
+    background: var(--card-bg);
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    background: var(--card-bg);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+</style>
+{% endblock %}
+

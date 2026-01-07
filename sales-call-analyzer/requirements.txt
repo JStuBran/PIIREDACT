@@ -22,9 +22,14 @@ resend>=0.7.0
 # Utilities
 python-dotenv>=1.0.0
 itsdangerous>=2.1.0
+requests>=2.31.0
 
 # Database
 # SQLite is built into Python, no extra package needed
 # PostgreSQL support (for production deployments like Railway)
 psycopg2-binary>=2.9.0
+
+# Task Queue (optional - for production scaling)
+celery>=5.3.0
+redis>=5.0.0
 
