@@ -422,7 +422,8 @@ def api_status(job_id):
     job = db.get_call(job_id)
     
     if not job:
-        return jsonify({"error": "Job not found"}), 404
+        logger.warning(f"Job not found: {job_id} (user: {session.get('user_email')})")
+        return jsonify({"error": "Job not found. This job may have been from a previous session or deployment."}), 404
     
     if job["user_email"] != session["user_email"]:
         return jsonify({"error": "Access denied"}), 403

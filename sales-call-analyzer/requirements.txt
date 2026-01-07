@@ -25,4 +25,6 @@ itsdangerous>=2.1.0
 
 # Database
 # SQLite is built into Python, no extra package needed
+# PostgreSQL support (for production deployments like Railway)
+psycopg2-binary>=2.9.0
 

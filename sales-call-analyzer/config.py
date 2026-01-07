@@ -54,7 +54,10 @@ class Config:
     ALLOWED_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "flac", "webm", "mp4"}
     
     # Database
-    DATABASE_PATH = os.environ.get("DATABASE_PATH", "sales_calls.db")
+    # If DATABASE_URL is set (e.g., from Railway PostgreSQL), it will be used
+    # Otherwise, falls back to SQLite using DATABASE_PATH
+    DATABASE_URL = os.environ.get("DATABASE_URL")  # PostgreSQL connection string
+    DATABASE_PATH = os.environ.get("DATABASE_PATH", "sales_calls.db")  # SQLite path
     
     # App URL (for magic links)
     APP_URL = os.environ.get("APP_URL", "http://localhost:5000")

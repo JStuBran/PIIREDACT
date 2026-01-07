@@ -1,63 +1,129 @@
-"""Database service for persistent call storage."""
+"""Database service for persistent call storage - supports both SQLite and PostgreSQL."""
 
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+# Try to import PostgreSQL driver
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+    logger.warning("psycopg2 not available. PostgreSQL support disabled.")
+
 
 class DatabaseService:
-    """SQLite database service for storing call data."""
+    """Database service supporting both SQLite and PostgreSQL."""
 
-    def __init__(self, db_path: str = "sales_calls.db"):
+    def __init__(self, db_path: Optional[str] = None, database_url: Optional[str] = None):
         """
         Initialize the database service.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (for SQLite)
+            database_url: PostgreSQL connection URL (for PostgreSQL)
+                        If DATABASE_URL env var is set, it takes precedence
         """
-        self.db_path = db_path
+        # Check for DATABASE_URL environment variable first (Railway provides this)
+        database_url = database_url or os.environ.get("DATABASE_URL")
+        
+        if database_url:
+            # Use PostgreSQL
+            self.db_type = "postgresql"
+            self.database_url = database_url
+            # Parse connection string
+            parsed = urlparse(database_url)
+            self.db_config = {
+                "host": parsed.hostname,
+                "port": parsed.port or 5432,
+                "database": parsed.path.lstrip("/"),
+                "user": parsed.username,
+                "password": parsed.password,
+            }
+            logger.info(f"DatabaseService initialized: PostgreSQL at {self.db_config['host']}")
+        else:
+            # Use SQLite
+            self.db_type = "sqlite"
+            if not db_path:
+                db_path = os.environ.get("DATABASE_PATH", "sales_calls.db")
+            
+            # Ensure the directory exists for the database file
+            db_dir = Path(db_path).parent
+            if db_dir and not db_dir.exists():
+                db_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created database directory: {db_dir}")
+            
+            self.db_path = db_path
+            logger.info(f"DatabaseService initialized: SQLite at {db_path}")
+        
         self._init_db()
-        logger.info(f"DatabaseService initialized: {db_path}")
+
+    def _get_connection(self):
+        """Get a database connection."""
+        if self.db_type == "postgresql":
+            if not PSYCOPG2_AVAILABLE:
+                raise RuntimeError("PostgreSQL requires psycopg2. Install with: pip install psycopg2-binary")
+            return psycopg2.connect(**self.db_config)
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            return conn
 
     def _init_db(self):
         """Initialize database schema."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
+        # SQL differences between SQLite and PostgreSQL
+        if self.db_type == "postgresql":
+            # PostgreSQL uses SERIAL for auto-increment
+            id_type = "SERIAL PRIMARY KEY"
+            timestamp_default = "DEFAULT CURRENT_TIMESTAMP"
+            text_type = "TEXT"
+        else:
+            # SQLite uses INTEGER PRIMARY KEY AUTOINCREMENT
+            id_type = "INTEGER PRIMARY KEY AUTOINCREMENT"
+            timestamp_default = "DEFAULT CURRENT_TIMESTAMP"
+            text_type = "TEXT"
+
         # Create calls table
-        cursor.execute("""
+        cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS calls (
-                id TEXT PRIMARY KEY,
-                filename TEXT NOT NULL,
-                user_email TEXT NOT NULL,
-                rep_name TEXT,
-                file_path TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                id {text_type} PRIMARY KEY,
+                filename {text_type} NOT NULL,
+                user_email {text_type} NOT NULL,
+                rep_name {text_type},
+                file_path {text_type},
+                created_at TIMESTAMP {timestamp_default},
                 completed_at TIMESTAMP,
-                status TEXT,
-                error TEXT,
-                transcription_json TEXT,
-                analysis_json TEXT,
-                stats_json TEXT,
-                coaching_pdf_path TEXT,
-                stats_pdf_path TEXT
+                status {text_type},
+                error {text_type},
+                transcription_json {text_type},
+                analysis_json {text_type},
+                stats_json {text_type},
+                coaching_pdf_path {text_type},
+                stats_pdf_path {text_type}
             )
         """)
 
         # Create annotations table
-        cursor.execute("""
+        cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS annotations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                call_id TEXT NOT NULL,
+                id {id_type},
+                call_id {text_type} NOT NULL,
                 timestamp_sec REAL,
-                note TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (call_id) REFERENCES calls(id)
+                note {text_type},
+                created_at TIMESTAMP {timestamp_default},
+                FOREIGN KEY (call_id) REFERENCES calls(id) ON DELETE CASCADE
             )
         """)
 
@@ -99,12 +165,13 @@ class DatabaseService:
         Returns:
             Call record dict
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        param_style = "%s" if self.db_type == "postgresql" else "?"
+        cursor.execute(f"""
             INSERT INTO calls (id, filename, user_email, rep_name, file_path, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES ({param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style})
         """, (call_id, filename, user_email, rep_name, file_path, "pending"))
 
         conn.commit()
@@ -122,12 +189,21 @@ class DatabaseService:
         Returns:
             Call record dict or None
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        conn = self._get_connection()
+        
+        if self.db_type == "postgresql":
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM calls WHERE id = ?", (call_id,))
-        row = cursor.fetchone()
+        param_style = "%s" if self.db_type == "postgresql" else "?"
+        cursor.execute(f"SELECT * FROM calls WHERE id = {param_style}", (call_id,))
+        
+        if self.db_type == "postgresql":
+            row = cursor.fetchone()
+        else:
+            row = cursor.fetchone()
+        
         conn.close()
 
         if not row:
@@ -153,8 +229,10 @@ class DatabaseService:
         if not updates:
             return self.get_call(call_id)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
+
+        param_style = "%s" if self.db_type == "postgresql" else "?"
 
         # Build update query
         set_clauses = []
@@ -171,12 +249,12 @@ class DatabaseService:
                 else:
                     value = value.isoformat() if hasattr(value, "isoformat") else str(value)
 
-            set_clauses.append(f"{key} = ?")
+            set_clauses.append(f"{key} = {param_style}")
             values.append(value)
 
         values.append(call_id)
 
-        query = f"UPDATE calls SET {', '.join(set_clauses)} WHERE id = ?"
+        query = f"UPDATE calls SET {', '.join(set_clauses)} WHERE id = {param_style}"
         cursor.execute(query, values)
 
         conn.commit()
@@ -203,21 +281,26 @@ class DatabaseService:
         Returns:
             List of call records matching the search
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        conn = self._get_connection()
+        
+        if self.db_type == "postgresql":
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            cursor = conn.cursor()
+
+        param_style = "%s" if self.db_type == "postgresql" else "?"
 
         where_clauses = ["status = 'complete'", "transcription_json IS NOT NULL"]
         params = []
 
         if user_email:
-            where_clauses.append("user_email = ?")
+            where_clauses.append(f"user_email = {param_style}")
             params.append(user_email)
 
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
-        # Get all matching calls and search in memory (SQLite FTS would require schema changes)
-        query_sql = f"SELECT * FROM calls {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        # Get all matching calls and search in memory
+        query_sql = f"SELECT * FROM calls {where_sql} ORDER BY created_at DESC LIMIT {param_style} OFFSET {param_style}"
         params.extend([limit * 3, offset])  # Get more to filter
 
         cursor.execute(query_sql, params)
@@ -264,23 +347,28 @@ class DatabaseService:
         Returns:
             List of call records
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        conn = self._get_connection()
+        
+        if self.db_type == "postgresql":
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            cursor = conn.cursor()
+
+        param_style = "%s" if self.db_type == "postgresql" else "?"
 
         where_clauses = []
         params = []
 
         if user_email:
-            where_clauses.append("user_email = ?")
+            where_clauses.append(f"user_email = {param_style}")
             params.append(user_email)
 
         if rep_name:
-            where_clauses.append("rep_name = ?")
+            where_clauses.append(f"rep_name = {param_style}")
             params.append(rep_name)
 
         if status:
-            where_clauses.append("status = ?")
+            where_clauses.append(f"status = {param_style}")
             params.append(status)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -289,7 +377,7 @@ class DatabaseService:
             SELECT * FROM calls
             {where_sql}
             ORDER BY {order_by}
-            LIMIT ? OFFSET ?
+            LIMIT {param_style} OFFSET {param_style}
         """
         params.extend([limit, offset])
 
@@ -316,22 +404,24 @@ class DatabaseService:
         Returns:
             Count of matching calls
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
+
+        param_style = "%s" if self.db_type == "postgresql" else "?"
 
         where_clauses = []
         params = []
 
         if user_email:
-            where_clauses.append("user_email = ?")
+            where_clauses.append(f"user_email = {param_style}")
             params.append(user_email)
 
         if rep_name:
-            where_clauses.append("rep_name = ?")
+            where_clauses.append(f"rep_name = {param_style}")
             params.append(rep_name)
 
         if status:
-            where_clauses.append("status = ?")
+            where_clauses.append(f"status = {param_style}")
             params.append(status)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -358,18 +448,20 @@ class DatabaseService:
         Returns:
             Dict with summary stats
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
+
+        param_style = "%s" if self.db_type == "postgresql" else "?"
 
         where_clauses = []
         params = []
 
         if user_email:
-            where_clauses.append("user_email = ?")
+            where_clauses.append(f"user_email = {param_style}")
             params.append(user_email)
 
         if rep_name:
-            where_clauses.append("rep_name = ?")
+            where_clauses.append(f"rep_name = {param_style}")
             params.append(rep_name)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -435,14 +527,16 @@ class DatabaseService:
         Returns:
             List of rep names
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
+        param_style = "%s" if self.db_type == "postgresql" else "?"
+
         if user_email:
-            query = """
+            query = f"""
                 SELECT DISTINCT rep_name
                 FROM calls
-                WHERE rep_name IS NOT NULL AND user_email = ?
+                WHERE rep_name IS NOT NULL AND user_email = {param_style}
                 ORDER BY rep_name
             """
             cursor.execute(query, (user_email,))
@@ -460,9 +554,14 @@ class DatabaseService:
 
         return reps
 
-    def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
-        """Convert SQLite row to dict, parsing JSON fields."""
-        d = dict(row)
+    def _row_to_dict(self, row: Union[sqlite3.Row, Dict]) -> Dict[str, Any]:
+        """Convert database row to dict, parsing JSON fields."""
+        if self.db_type == "postgresql":
+            # psycopg2 RealDictCursor returns a dict-like object
+            d = dict(row)
+        else:
+            # SQLite Row is already dict-like
+            d = dict(row)
 
         # Parse JSON fields
         for json_field in ["transcription_json", "analysis_json", "stats_json"]:
@@ -486,14 +585,16 @@ class DatabaseService:
         Returns:
             True if deleted, False if not found
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Delete annotations first
-        cursor.execute("DELETE FROM annotations WHERE call_id = ?", (call_id,))
+        param_style = "%s" if self.db_type == "postgresql" else "?"
+
+        # Delete annotations first (CASCADE should handle this, but being explicit)
+        cursor.execute(f"DELETE FROM annotations WHERE call_id = {param_style}", (call_id,))
 
         # Delete call
-        cursor.execute("DELETE FROM calls WHERE id = ?", (call_id,))
+        cursor.execute(f"DELETE FROM calls WHERE id = {param_style}", (call_id,))
         deleted = cursor.rowcount > 0
 
         conn.commit()
@@ -501,3 +602,32 @@ class DatabaseService:
 
         return deleted
 
+    # Additional methods for compatibility with existing code
+    def get_dashboard_stats(self, user_email: Optional[str] = None) -> Dict[str, Any]:
+        """Alias for get_summary_stats for backward compatibility."""
+        return self.get_summary_stats(user_email=user_email)
+
+    def get_call_data_for_export(self, call_id: str) -> Optional[Dict[str, Any]]:
+        """Get call data formatted for export."""
+        return self.get_call(call_id)
+
+    def get_calls_for_comparison(self, call_ids: List[str]) -> List[Dict[str, Any]]:
+        """Get multiple calls for comparison."""
+        calls = []
+        for call_id in call_ids:
+            call = self.get_call(call_id)
+            if call:
+                calls.append(call)
+        return calls
+
+    def get_all_call_stats(self, user_email: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get stats for all completed calls."""
+        calls = self.list_calls(user_email=user_email, status="complete", limit=1000)
+        return [call.get("stats_json", {}) for call in calls if call.get("stats_json")]
+
+    def get_call_transcription_for_export(self, call_id: str) -> Optional[Dict[str, Any]]:
+        """Get transcription data for export."""
+        call = self.get_call(call_id)
+        if call:
+            return call.get("transcription_json")
+        return None

@@ -101,13 +101,20 @@ docker run -p 8080:8080 \
 1. Create a new project on Railway
 2. Connect your GitHub repo
 3. Set the **Root Directory** to `sales-call-analyzer`
-4. Set environment variables:
+4. **Add PostgreSQL Database** (recommended):
+   - Click `+ New` → `Database` → `PostgreSQL`
+   - Railway automatically provides `DATABASE_URL` environment variable
+   - The app will automatically use PostgreSQL when `DATABASE_URL` is set
+5. Set environment variables:
    - `SECRET_KEY`
    - `OPENAI_API_KEY`
    - `RESEND_API_KEY` (or SMTP settings)
    - `APP_URL` (your Railway URL, e.g., `https://your-app.up.railway.app`)
    - `ALLOWED_EMAILS` (optional whitelist)
-5. Deploy!
+   - `DATABASE_URL` (automatically set if you added PostgreSQL)
+6. Deploy!
+
+**Note**: The app supports both PostgreSQL (recommended for production) and SQLite (for local development). If `DATABASE_URL` is set, PostgreSQL is used automatically. Otherwise, it falls back to SQLite.
 
 ### Render / Fly.io
 
@@ -152,6 +159,32 @@ Recommended settings:
 - **Magic links**: Passwordless auth, links expire in 15 minutes
 - **Files deleted**: Audio files removed after processing
 
+## Database Configuration
+
+The app supports both **PostgreSQL** (recommended for production) and **SQLite** (for local development).
+
+### PostgreSQL (Production - Railway, etc.)
+
+When `DATABASE_URL` environment variable is set, the app automatically uses PostgreSQL:
+- Railway: Add PostgreSQL service, `DATABASE_URL` is automatically provided
+- Other platforms: Set `DATABASE_URL=postgresql://user:password@host:port/database`
+
+**Benefits:**
+- Better concurrency (handles multiple workers)
+- More reliable in containerized environments
+- Production-ready
+
+### SQLite (Local Development)
+
+If `DATABASE_URL` is not set, the app uses SQLite:
+- Default path: `sales_calls.db` in current directory
+- Customize with: `DATABASE_PATH=/path/to/database.db`
+
+**Note**: For Docker deployments with SQLite, use a persistent volume:
+```bash
+DATABASE_PATH=/data/sales_calls.db
+```
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
@@ -166,6 +199,8 @@ Recommended settings:
 | `SMTP_PASS` | * | - | SMTP password |
 | `ALLOWED_EMAILS` | No | - | Comma-separated whitelist |
 | `APP_URL` | No | `http://localhost:5000` | Public URL |
+| `DATABASE_URL` | No | - | PostgreSQL connection string (auto-set by Railway) |
+| `DATABASE_PATH` | No | `sales_calls.db` | SQLite database path (used if DATABASE_URL not set) |
 
 \* Either Resend or SMTP configuration required for email
 
