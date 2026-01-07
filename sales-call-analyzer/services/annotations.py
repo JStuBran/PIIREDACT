@@ -140,6 +140,31 @@ class AnnotationsService:
 
         return [dict(row) for row in rows]
 
+    def get_annotation(self, annotation_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get a single annotation by ID.
+
+        Args:
+            annotation_id: Annotation ID
+
+        Returns:
+            Annotation record or None
+        """
+        conn = self._get_connection()
+        
+        if self.db_type == "postgresql":
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            cursor = conn.cursor()
+
+        param_style = "%s" if self.db_type == "postgresql" else "?"
+        
+        cursor.execute(f"SELECT * FROM annotations WHERE id = {param_style}", (annotation_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
     def update_annotation(
         self,
         annotation_id: int,

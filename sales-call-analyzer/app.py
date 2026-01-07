@@ -876,21 +876,14 @@ def update_annotation_api(annotation_id):
     """Update or delete an annotation."""
     annotations_service = get_annotations()
     
-    # Get annotation to verify ownership via database
-    db = get_database()
-    # We need to find the annotation's call_id - query annotations table
-    import sqlite3
-    conn = sqlite3.connect(Config.DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT call_id FROM annotations WHERE id = ?", (annotation_id,))
-    annotation_row = cursor.fetchone()
-    conn.close()
+    # Get annotation to verify ownership
+    annotation_row = annotations_service.get_annotation(annotation_id)
     
     if not annotation_row:
         return jsonify({"error": "Annotation not found"}), 404
     
     # Verify call ownership
+    db = get_database()
     call = db.get_call(annotation_row["call_id"])
     if not call or call["user_email"] != session["user_email"]:
         return jsonify({"error": "Access denied"}), 403
