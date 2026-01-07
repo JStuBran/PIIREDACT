@@ -139,6 +139,8 @@ def get_database() -> DatabaseService:
     """Get or create database service."""
     global _database
     if _database is None:
+        # DatabaseService auto-detects DATABASE_URL (for PostgreSQL) or falls back to SQLite
+        # Pass db_path only as fallback for SQLite (DatabaseService checks DATABASE_URL first)
         _database = DatabaseService(db_path=Config.DATABASE_PATH)
     return _database
 
@@ -163,6 +165,8 @@ def get_annotations() -> AnnotationsService:
     """Get or create annotations service."""
     global _annotations
     if _annotations is None:
+        # AnnotationsService auto-detects DATABASE_URL (for PostgreSQL) or falls back to SQLite
+        # Pass db_path only as fallback for SQLite (AnnotationsService checks DATABASE_URL first)
         _annotations = AnnotationsService(db_path=Config.DATABASE_PATH)
     return _annotations
 
