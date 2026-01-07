@@ -25,7 +25,7 @@
                     </div>
                 </div>
                 <div class="call-meta">
-                    <span class="text-muted">{{ call.created_at[:10] if call.created_at else '—' }}</span>
+                    <span class="text-muted">{{ call.created_at.strftime('%Y-%m-%d') if call.created_at else '—' }}</span>
                     <a href="{{ url_for('report', job_id=call.id) }}" class="btn-link">View Report</a>
                 </div>
             </div>

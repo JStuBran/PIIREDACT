@@ -7,7 +7,7 @@
     <div class="report-header">
         <div>
             <h1>Call Analysis Report</h1>
-            <p class="subtitle">{{ job.filename }} &middot; {{ job.completed_at[:10] if job.completed_at else '' }}</p>
+            <p class="subtitle">{{ job.filename }} &middot; {{ job.completed_at.strftime('%Y-%m-%d') if job.completed_at else '' }}</p>
         </div>
         <div class="report-actions">
             <a href="{{ url_for('transcript', job_id=job.id) }}" class="btn btn-outline">📝 View Transcript</a>

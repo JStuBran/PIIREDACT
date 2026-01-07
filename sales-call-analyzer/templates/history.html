@@ -111,7 +111,7 @@
                         </td>
                         <td class="text-muted">
                             {% if call.created_at %}
-                                {{ call.created_at[:16]|replace('T', ' ') }}
+                                {{ call.created_at.strftime('%Y-%m-%d %H:%M') }}
                             {% else %}
                                 —
                             {% endif %}
@@ -223,7 +223,7 @@ updateCompareButton();
 </script>
 {% endblock %}
 
-{% block scripts %}
+{% block styles %}
 <style>
 .history {
     max-width: 1200px;

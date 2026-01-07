@@ -103,7 +103,7 @@
                             </span>
                         </td>
                         <td class="text-muted">
-                            {{ call.created_at[:10] if call.created_at else '—' }}
+                            {{ call.created_at.strftime('%Y-%m-%d') if call.created_at else '—' }}
                         </td>
                         <td>
                             <div class="action-buttons">

@@ -46,7 +46,7 @@
                         <a href="{{ url_for('report', job_id=call.id) }}" class="call-link">
                             {{ call.filename }}
                         </a>
-                        <span class="call-date">{{ call.created_at[:10] if call.created_at else '' }}</span>
+                        <span class="call-date">{{ call.created_at.strftime('%Y-%m-%d') if call.created_at else '' }}</span>
                     </li>
                     {% endfor %}
                 </ul>
