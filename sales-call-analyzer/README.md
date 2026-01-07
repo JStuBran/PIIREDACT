@@ -4,20 +4,41 @@ A secure, self-hosted sales call analysis tool. Upload audio recordings, get PII
 
 ## Features
 
+### Core Capabilities
 - 🔒 **PII Redaction** - Names, phone numbers, and sensitive data automatically redacted using Presidio
 - 🎙️ **Transcription** - Local Whisper model (no audio sent to external services)
 - 🤖 **AI Coaching** - GPT-4o analyzes calls and provides actionable feedback
 - 📊 **Call Stats** - Talk time, questions, filler words, and more
 - 📄 **PDF Reports** - Professional coaching reports delivered via email
 - 🔐 **Email Auth** - Magic link login with email whitelist
-- 📈 **Dashboard & History** - View all calls, search, filter, and track progress
-- 👥 **Team Management** - Track multiple reps with performance summaries
-- 🔍 **Interactive Transcripts** - Search, navigate, and export transcripts
-- 📊 **Call Comparison** - Compare multiple calls side-by-side with trends
+
+### Analytics & Intelligence
+- 🎯 **Automated Call Scoring** - Customizable rubrics with weighted criteria, AI-powered scoring
+- 🧠 **Conversation Intelligence** - Talk-to-listen ratio, monologue detection, question quality analysis
+- 📈 **Dashboard & Leaderboards** - Track performance, view score trends, rep rankings
+- 🔬 **Enhanced Analytics** - Sentiment analysis, objection detection, call structure analysis
+- 🏆 **Benchmarking** - Team averages and percentile rankings
+
+### Keyword & Topic Tracking
+- 🏷️ **Keyword Libraries** - Create custom keyword sets (competitors, products, objections)
+- 📊 **Keyword Dashboards** - Track mention frequency and trends over time
+- 🎯 **Topic Detection** - Automatic call phase identification
+
+### Training & Coaching
+- 📚 **Coaching Playlists** - Curate call collections for training programs
+- ✅ **Progress Tracking** - Monitor rep completion and self-assessments
 - 📝 **Annotations** - Add notes to specific timestamps in calls
+- 🔍 **Interactive Transcripts** - Search, navigate, speaker timelines, inline coaching
+
+### Team & Collaboration
+- 👥 **Team Management** - Track multiple reps with performance summaries
+- 📊 **Call Comparison** - Compare multiple calls side-by-side with trends
 - 📤 **Export Options** - CSV, JSON, PDF, TXT, and SRT subtitle exports
-- 🎯 **Benchmarking** - Team averages and percentile rankings
-- 🔬 **Enhanced Analytics** - Sentiment analysis, keyword detection, call structure
+
+### Developer Tools
+- 🔌 **REST API v1** - Programmatic access with API key authentication
+- 🔔 **Webhooks** - Real-time notifications for call events (completed, failed, scored)
+- ⚡ **Celery/Redis** - Optional distributed job queue for scalability
 
 ## Quick Start
 
@@ -132,24 +153,27 @@ Recommended settings:
 ## How It Works
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Upload    │───>│  Transcribe │───>│   Redact    │
-│   Audio     │    │  (Whisper)  │    │ (Presidio)  │
-└─────────────┘    └─────────────┘    └─────────────┘
-                                             │
-                                             ▼
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Email     │<───│  Generate   │<───│   Analyze   │
-│   Report    │    │    PDFs     │    │  (GPT-4o)   │
-└─────────────┘    └─────────────┘    └─────────────┘
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Upload    │───>│  Transcribe │───>│   Redact    │───>│   Analyze   │
+│   Audio     │    │  (Whisper)  │    │ (Presidio)  │    │  (GPT-4o)   │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+                                                                │
+         ┌──────────────────────────────────────────────────────┘
+         ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│    Score    │───>│   Keywords  │───>│  Generate   │───>│   Webhook   │
+│  (Rubrics)  │    │  Tracking   │    │    PDFs     │    │   Notify    │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
 ```
 
-1. **Upload**: Trainer uploads audio file via web interface
+1. **Upload**: Trainer uploads audio file via web interface or REST API
 2. **Transcribe**: Whisper converts audio to text locally
 3. **Redact**: Presidio detects and redacts PII (names, numbers, etc.)
 4. **Analyze**: Redacted transcript sent to GPT-4o for coaching analysis
-5. **Generate**: WeasyPrint creates PDF reports
-6. **Email**: Reports delivered to trainer's inbox
+5. **Score**: Automated scoring against customizable rubrics
+6. **Keywords**: Track competitor mentions, objections, and custom keywords
+7. **Generate**: WeasyPrint creates PDF reports
+8. **Notify**: Webhooks triggered for integrations, email sent to trainer
 
 ## Security
 
@@ -201,8 +225,133 @@ DATABASE_PATH=/data/sales_calls.db
 | `APP_URL` | No | `http://localhost:5000` | Public URL |
 | `DATABASE_URL` | No | - | PostgreSQL connection string (auto-set by Railway) |
 | `DATABASE_PATH` | No | `sales_calls.db` | SQLite database path (used if DATABASE_URL not set) |
+| `REDIS_URL` | No | - | Redis URL for Celery job queue |
+| `USE_CELERY` | No | `false` | Enable distributed job processing |
 
 \* Either Resend or SMTP configuration required for email
+
+## REST API
+
+The Sales Call Analyzer provides a REST API for programmatic access.
+
+### Authentication
+
+Create API keys from the web interface (Developers → API Keys). Include in requests:
+
+```bash
+curl -H "X-API-Key: sk_your_key_here" https://your-domain.com/api/v1/calls
+# OR
+curl -H "Authorization: Bearer sk_your_key_here" https://your-domain.com/api/v1/calls
+```
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/health` | Health check (no auth) |
+| `GET` | `/api/v1/calls` | List all calls |
+| `GET` | `/api/v1/calls/{id}` | Get call details |
+| `POST` | `/api/v1/calls` | Upload new call |
+| `GET` | `/api/v1/calls/{id}/score` | Get call score |
+| `GET` | `/api/v1/calls/{id}/keywords` | Get detected keywords |
+| `GET` | `/api/v1/analytics/summary` | Get analytics summary |
+| `GET` | `/api/v1/analytics/reps` | Get rep analytics |
+| `GET` | `/api/v1/keys` | List API keys (admin) |
+| `POST` | `/api/v1/keys` | Create API key (admin) |
+| `DELETE` | `/api/v1/keys/{id}` | Delete API key (admin) |
+| `GET` | `/api/v1/webhooks` | List webhooks (admin) |
+| `POST` | `/api/v1/webhooks` | Create webhook (admin) |
+| `DELETE` | `/api/v1/webhooks/{id}` | Delete webhook (admin) |
+
+### Permissions
+
+- `read` - View calls and analytics
+- `write` - Upload calls
+- `admin` - Manage API keys and webhooks
+
+## Webhooks
+
+Receive real-time notifications when events occur. Configure webhooks from the web interface (Developers → Webhooks).
+
+### Events
+
+| Event | Description |
+|-------|-------------|
+| `call.uploaded` | New call uploaded |
+| `call.processing` | Processing started |
+| `call.completed` | Analysis complete |
+| `call.failed` | Processing failed |
+| `score.generated` | Score calculated |
+
+### Payload Format
+
+```json
+{
+  "event": "call.completed",
+  "timestamp": "2026-01-07T12:00:00Z",
+  "data": {
+    "call_id": "abc-123",
+    "filename": "sales_call.mp3",
+    "status": "complete",
+    "score": 85,
+    "duration_min": 15.5
+  }
+}
+```
+
+### Signature Verification
+
+Each webhook includes `X-Webhook-Signature` header for verification:
+
+```python
+import hmac
+import hashlib
+
+def verify_signature(payload_body, signature_header, secret):
+    expected = hmac.new(secret.encode(), payload_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", signature_header)
+```
+
+## Scoring Rubrics
+
+Create custom scoring rubrics to evaluate calls consistently. Access from the web interface (Rubrics).
+
+### Default Criteria
+
+| Criterion | Weight | Description |
+|-----------|--------|-------------|
+| Opening | 15% | Professional greeting, rapport building |
+| Needs Discovery | 20% | Effective questioning, active listening |
+| Solution Presentation | 20% | Clear value proposition, benefit focus |
+| Objection Handling | 15% | Professional responses, concerns addressed |
+| Closing Technique | 15% | Clear next steps, commitment obtained |
+| Product Knowledge | 10% | Accurate information, confidence |
+| Communication Skills | 5% | Clarity, pace, professionalism |
+
+### Custom Rubrics
+
+Create rubrics tailored to your sales process:
+1. Go to **Rubrics** → **Create New**
+2. Add criteria with names, descriptions, and weights
+3. Set as default to auto-apply to new calls
+
+## Coaching Playlists
+
+Curate collections of calls for training programs.
+
+### Categories
+
+- **Training** - General onboarding materials
+- **Best Practices** - Exemplary calls to emulate
+- **Improvement** - Calls showing areas to work on
+- **Certification** - Required viewing for certifications
+
+### Features
+
+- Add calls with coaching notes
+- Track rep completion progress
+- Self-assessment scores
+- Public/private visibility
 
 ## Whisper Models
 
