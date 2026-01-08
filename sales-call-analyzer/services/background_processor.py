@@ -139,8 +139,18 @@ class BackgroundProcessor:
             coaching_pdf_path = os.path.join(config.UPLOAD_FOLDER, f"{job_id}_coaching.pdf")
             stats_pdf_path = os.path.join(config.UPLOAD_FOLDER, f"{job_id}_stats.pdf")
 
-            pdf_generator.generate_coaching_report(analysis, coaching_pdf_path)
-            pdf_generator.generate_stats_report(stats, stats_pdf_path)
+            pdf_generator.generate_coaching_report(
+                analysis=analysis,
+                output_path=coaching_pdf_path,
+                score_data=call_score,
+                conv_intel=conv_intel,
+                keywords_data=keywords_data,
+            )
+            pdf_generator.generate_stats_report(
+                stats=stats,
+                output_path=stats_pdf_path,
+                conv_intel=conv_intel,
+            )
 
             # Step 5: Send email
             logger.info(f"[{job_id}] Sending email...")
