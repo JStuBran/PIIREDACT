@@ -117,13 +117,37 @@ class DatabaseService:
         """)
         
         # Migration: Add call_type column if it doesn't exist (for existing databases)
-        try:
-            cursor.execute(f"""
-                ALTER TABLE calls ADD COLUMN call_type {text_type} DEFAULT 'real'
+        # Check if column exists first to avoid slow ALTER TABLE on large tables
+        if self.db_type == "postgresql":
+            # PostgreSQL: Check if column exists in information_schema
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='calls' AND column_name='call_type'
             """)
-        except Exception:
-            # Column already exists, ignore
-            pass
+            column_exists = cursor.fetchone() is not None
+            if not column_exists:
+                # Column doesn't exist, add it
+                # Use ALTER TABLE without DEFAULT to avoid updating all rows immediately
+                # Then set default for new rows only
+                cursor.execute(f"""
+                    ALTER TABLE calls ADD COLUMN call_type {text_type}
+                """)
+                cursor.execute("""
+                    ALTER TABLE calls ALTER COLUMN call_type SET DEFAULT 'real'
+                """)
+                # Update existing rows in batches (optional, can be done async)
+                # For now, just set default for new rows
+                logger.info("Added call_type column to calls table")
+        else:
+            # SQLite: Check if column exists by querying table info
+            cursor.execute("PRAGMA table_info(calls)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'call_type' not in columns:
+                cursor.execute(f"""
+                    ALTER TABLE calls ADD COLUMN call_type {text_type} DEFAULT 'real'
+                """)
+                logger.info("Added call_type column to calls table")
 
         # Create annotations table
         cursor.execute(f"""
