@@ -375,48 +375,135 @@ body {
 /* Call Type Tabs */
 .call-type-tabs {
     display: flex;
-    gap: 8px;
-    margin-bottom: 24px;
-    border-bottom: 2px solid var(--border);
-    padding-bottom: 0;
+    gap: 12px;
+    margin-bottom: 20px;
+    background: var(--bg);
+    padding: 8px;
+    border-radius: var(--radius);
+    border: 2px solid var(--border);
 }
 
 .tab-btn {
     flex: 1;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 12px 20px;
-    background: transparent;
-    border: none;
-    border-bottom: 3px solid transparent;
+    gap: 6px;
+    padding: 16px 20px;
+    background: var(--card-bg);
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
     color: var(--text-muted);
     transition: all 0.3s ease;
     position: relative;
-    bottom: -2px;
 }
 
 .tab-btn:hover {
-    color: var(--text);
-    background: var(--bg);
+    border-color: var(--border);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
 }
 
-.tab-btn.active {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
-    background: transparent;
+.tab-btn.tab-real.active {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    border-color: #1976d2;
+    color: #1976d2;
+    box-shadow: 0 4px 12px rgba(25, 118, 210, 0.2);
+}
+
+.tab-btn.tab-ai.active {
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    border-color: #7b1fa2;
+    color: #7b1fa2;
+    box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);
 }
 
 .tab-icon {
-    font-size: 18px;
+    font-size: 24px;
 }
 
 .tab-label {
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.tab-desc {
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tab-btn.active .tab-desc {
+    opacity: 1;
+}
+
+/* Call Type Info Box */
+.call-type-info {
+    margin-bottom: 24px;
+    padding: 20px;
+    border-radius: var(--radius);
+    border: 2px solid;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.call-type-info.info-real {
+    background: linear-gradient(135deg, #e3f2fd, #ffffff);
+    border-color: #1976d2;
+}
+
+.call-type-info.info-ai {
+    background: linear-gradient(135deg, #f3e5f5, #ffffff);
+    border-color: #7b1fa2;
+}
+
+.info-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.info-content {
+    flex: 1;
+}
+
+.info-content h4 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.info-content p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+}
+
+.info-real .info-content h4 {
+    color: #1976d2;
+}
+
+.info-ai .info-content h4 {
+    color: #7b1fa2;
 }
 
 /* Dropzone */
