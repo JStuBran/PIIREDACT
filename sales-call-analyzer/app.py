@@ -348,6 +348,13 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/pii-redaction")
+@login_required
+def pii_redaction():
+    """Page explaining how PII redaction works."""
+    return render_template("pii_redaction.html")
+
+
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
 def upload():

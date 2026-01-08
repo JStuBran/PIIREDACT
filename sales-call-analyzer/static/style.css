@@ -372,6 +372,26 @@ body {
     margin-bottom: 8px;
 }
 
+.upload-header .pii-link {
+    margin-top: 12px;
+    font-size: 14px;
+}
+
+.upload-header .link-primary {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.upload-header .link-primary:hover {
+    text-decoration: underline;
+    color: #0d47a1;
+}
+
 /* Call Type Tabs */
 .call-type-tabs {
     display: flex;

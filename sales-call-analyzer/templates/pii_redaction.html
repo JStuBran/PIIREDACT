@@ -1,0 +1,704 @@
+{% extends "base.html" %}
+
+{% block title %}How PII Redaction Works - Sales Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="pii-redaction-page">
+    <div class="page-header">
+        <h1>🔒 How PII Redaction Works</h1>
+        <p class="subtitle">Understanding how we protect customer privacy during call analysis</p>
+    </div>
+
+    <div class="content-container">
+        <!-- Overview -->
+        <section class="info-section">
+            <h2>What is PII Redaction?</h2>
+            <p>
+                PII (Personally Identifiable Information) redaction is the process of automatically detecting and 
+                removing sensitive information from call transcripts before they're analyzed. This protects customer 
+                privacy while still allowing you to get valuable coaching insights from your sales calls.
+            </p>
+            <div class="highlight-box">
+                <strong>Key Point:</strong> Your audio files never leave our servers unredacted. Only anonymized 
+                transcripts are sent to OpenAI for analysis.
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="info-section">
+            <h2>How It Works</h2>
+            <div class="process-flow">
+                <div class="process-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Audio Transcription</h3>
+                        <p>
+                            Your audio file is transcribed locally using <strong>OpenAI Whisper</strong>, a powerful 
+                            speech-to-text model that runs entirely on our servers. The audio never leaves our infrastructure.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="process-arrow">↓</div>
+
+                <div class="process-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>PII Detection</h3>
+                        <p>
+                            <strong>Microsoft Presidio</strong> analyzes the transcript to identify sensitive information 
+                            using advanced NLP models. It detects:
+                        </p>
+                        <ul class="pii-list">
+                            <li>👤 <strong>Names</strong> - Person names, company names</li>
+                            <li>📞 <strong>Phone Numbers</strong> - All formats (US, international)</li>
+                            <li>📧 <strong>Email Addresses</strong> - All email formats</li>
+                            <li>🏠 <strong>Addresses</strong> - Street addresses, cities, states</li>
+                            <li>💳 <strong>Credit Card Numbers</strong> - All major card formats</li>
+                            <li>🆔 <strong>SSN</strong> - Social Security Numbers</li>
+                            <li>🔢 <strong>IP Addresses</strong> - Network identifiers</li>
+                            <li>🌐 <strong>URLs</strong> - Web addresses</li>
+                            <li>📅 <strong>Dates of Birth</strong> - Personal dates</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="process-arrow">↓</div>
+
+                <div class="process-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Automatic Redaction</h3>
+                        <p>
+                            Detected PII is automatically replaced with generic placeholders like <code>&lt;PERSON&gt;</code>, 
+                            <code>&lt;PHONE_NUMBER&gt;</code>, <code>&lt;EMAIL_ADDRESS&gt;</code>, etc. The original 
+                            unredacted text is immediately deleted from memory.
+                        </p>
+                        <div class="example-box">
+                            <div class="example-before">
+                                <strong>Before:</strong> "Hi, this is John Smith. You can reach me at john@example.com or 555-123-4567."
+                            </div>
+                            <div class="example-after">
+                                <strong>After:</strong> "Hi, this is &lt;PERSON&gt;. You can reach me at &lt;EMAIL_ADDRESS&gt; or &lt;PHONE_NUMBER&gt;."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="process-arrow">↓</div>
+
+                <div class="process-step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Secure Analysis</h3>
+                        <p>
+                            Only the <strong>redacted transcript</strong> is sent to OpenAI's GPT-4o for analysis. 
+                            The AI never sees any customer names, phone numbers, or other sensitive information.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="process-arrow">↓</div>
+
+                <div class="process-step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h3>Coaching Reports</h3>
+                        <p>
+                            You receive coaching insights, scores, and analytics based on the anonymized transcript. 
+                            All reports and transcripts you see are already redacted.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Security Measures -->
+        <section class="info-section">
+            <h2>Security Measures</h2>
+            <div class="security-grid">
+                <div class="security-card">
+                    <div class="security-icon">🔐</div>
+                    <h3>File Encryption</h3>
+                    <p>
+                        Audio files are encrypted at rest using Fernet symmetric encryption. Files are stored 
+                        securely and automatically deleted after processing.
+                    </p>
+                </div>
+
+                <div class="security-card">
+                    <div class="security-icon">🧹</div>
+                    <h3>Memory Clearing</h3>
+                    <p>
+                        Unredacted transcripts are immediately removed from memory after redaction. We never 
+                        store the original text alongside the redacted version.
+                    </p>
+                </div>
+
+                <div class="security-card">
+                    <div class="security-icon">📝</div>
+                    <h3>Secure Logging</h3>
+                    <p>
+                        All logs are automatically sanitized to prevent PII from appearing in error messages 
+                        or system logs. We use pattern matching to detect and redact sensitive data.
+                    </p>
+                </div>
+
+                <div class="security-card">
+                    <div class="security-icon">🚫</div>
+                    <h3>No PII in Responses</h3>
+                    <p>
+                        API responses and database records never include unredacted text. The original transcript 
+                        is filtered out before any data leaves our processing pipeline.
+                    </p>
+                </div>
+
+                <div class="security-card">
+                    <div class="security-icon">🗑️</div>
+                    <h3>Secure Deletion</h3>
+                    <p>
+                        Files are securely deleted using multiple overwrite passes. This ensures deleted files 
+                        cannot be recovered from disk.
+                    </p>
+                </div>
+
+                <div class="security-card">
+                    <div class="security-icon">🔒</div>
+                    <h3>Local Processing</h3>
+                    <p>
+                        Whisper transcription runs entirely on our servers. Your audio files never leave our 
+                        infrastructure until they're deleted.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- What Gets Redacted -->
+        <section class="info-section">
+            <h2>What Information is Protected?</h2>
+            <div class="pii-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Examples</th>
+                            <th>Replacement</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Person Names</strong></td>
+                            <td>John Smith, Jane Doe, Microsoft</td>
+                            <td><code>&lt;PERSON&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Phone Numbers</strong></td>
+                            <td>(555) 123-4567, +1-555-123-4567</td>
+                            <td><code>&lt;PHONE_NUMBER&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Email Addresses</strong></td>
+                            <td>john@example.com, contact@company.com</td>
+                            <td><code>&lt;EMAIL_ADDRESS&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Physical Addresses</strong></td>
+                            <td>123 Main St, New York, NY 10001</td>
+                            <td><code>&lt;LOCATION&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Credit Cards</strong></td>
+                            <td>4532-1234-5678-9010</td>
+                            <td><code>&lt;CREDIT_CARD&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>SSN</strong></td>
+                            <td>123-45-6789</td>
+                            <td><code>&lt;US_SSN&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>IP Addresses</strong></td>
+                            <td>192.168.1.1, 2001:0db8::1</td>
+                            <td><code>&lt;IP_ADDRESS&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>URLs</strong></td>
+                            <td>https://example.com/page</td>
+                            <td><code>&lt;URL&gt;</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Real vs AI Agent Calls -->
+        <section class="info-section">
+            <h2>Real Calls vs AI Agent Calls</h2>
+            <div class="comparison-grid">
+                <div class="comparison-card real-call">
+                    <h3>👤 Real Customer Calls</h3>
+                    <ul>
+                        <li>✅ <strong>PII Redaction Enabled</strong> - All sensitive information is automatically removed</li>
+                        <li>✅ <strong>Privacy Protected</strong> - Customer data never exposed to AI</li>
+                        <li>✅ <strong>Secure Processing</strong> - Full security pipeline applied</li>
+                    </ul>
+                    <p class="note">
+                        <strong>Use for:</strong> Actual sales calls with real customers
+                    </p>
+                </div>
+
+                <div class="comparison-card ai-call">
+                    <h3>🤖 AI Agent Calls</h3>
+                    <ul>
+                        <li>⚠️ <strong>No PII Redaction</strong> - Simulated calls don't contain real customer data</li>
+                        <li>✅ <strong>Faster Processing</strong> - Skips redaction step</li>
+                        <li>✅ <strong>Full Transcript</strong> - Complete conversation analyzed</li>
+                    </ul>
+                    <p class="note">
+                        <strong>Use for:</strong> Test calls, AI agent simulations, training scenarios
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="info-section">
+            <h2>Frequently Asked Questions</h2>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <h3>Is my audio data secure?</h3>
+                    <p>
+                        Yes. Audio files are encrypted at rest and processed entirely on our servers. 
+                        They're automatically deleted after processing is complete.
+                    </p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>Does OpenAI see my customer's information?</h3>
+                    <p>
+                        No. Only the redacted transcript (with PII replaced by placeholders) is sent to OpenAI. 
+                        Customer names, phone numbers, emails, and other sensitive data are never transmitted.
+                    </p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>How accurate is PII detection?</h3>
+                    <p>
+                        Presidio uses advanced NLP models with a confidence threshold of 40%. This balances 
+                        accuracy with coverage, ensuring most PII is caught while minimizing false positives.
+                    </p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>Can I see what was redacted?</h3>
+                    <p>
+                        For security reasons, we don't show the original unredacted text. However, you can see 
+                        the redacted transcript in your reports, which shows where PII was detected and replaced.
+                    </p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>What if I upload an AI agent call by mistake?</h3>
+                    <p>
+                        AI agent calls are clearly marked in your dashboard and reports. If you accidentally 
+                        upload a real call as an AI agent call, the system will still process it, but without 
+                        PII redaction. Always double-check your selection before uploading.
+                    </p>
+                </div>
+
+                <div class="faq-item">
+                    <h3>Is this compliant with privacy regulations?</h3>
+                    <p>
+                        Our PII redaction process helps protect customer privacy, but you're responsible for 
+                        ensuring compliance with applicable regulations (GDPR, CCPA, etc.) in your jurisdiction. 
+                        We recommend consulting with legal counsel for specific compliance requirements.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Call to Action -->
+        <section class="info-section cta-section">
+            <div class="cta-box">
+                <h2>Ready to Get Started?</h2>
+                <p>Upload your first call and see how PII redaction protects customer privacy while delivering valuable insights.</p>
+                <a href="{{ url_for('upload') }}" class="btn btn-primary btn-large">Upload a Call</a>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.pii-redaction-page {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 20px;
+}
+
+.page-header {
+    text-align: center;
+    margin-bottom: 48px;
+}
+
+.page-header h1 {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.page-header .subtitle {
+    font-size: 18px;
+    color: var(--text-muted);
+}
+
+.content-container {
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+}
+
+.info-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    box-shadow: var(--shadow);
+}
+
+.info-section h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text);
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 12px;
+}
+
+.info-section p {
+    font-size: 16px;
+    line-height: 1.8;
+    color: var(--text);
+    margin-bottom: 16px;
+}
+
+.highlight-box {
+    background: linear-gradient(135deg, #e3f2fd, #ffffff);
+    border: 2px solid #1976d2;
+    border-radius: var(--radius-sm);
+    padding: 20px;
+    margin: 24px 0;
+}
+
+.highlight-box strong {
+    color: #1976d2;
+    font-size: 18px;
+}
+
+/* Process Flow */
+.process-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.process-step {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    background: var(--bg);
+    padding: 24px;
+    border-radius: var(--radius);
+    border-left: 4px solid var(--primary);
+}
+
+.step-number {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.step-content h3 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.step-content p {
+    margin-bottom: 12px;
+}
+
+.process-arrow {
+    text-align: center;
+    font-size: 32px;
+    color: var(--primary);
+    font-weight: 700;
+    margin: -12px 0;
+}
+
+.pii-list {
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+}
+
+.pii-list li {
+    padding: 8px 0;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.example-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.example-before,
+.example-after {
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 4px;
+}
+
+.example-before {
+    background: #fee2e2;
+    border-left: 3px solid #dc2626;
+}
+
+.example-after {
+    background: #d1fae5;
+    border-left: 3px solid #10b981;
+}
+
+.example-box code {
+    background: rgba(0, 0, 0, 0.05);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+
+/* Security Grid */
+.security-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    margin-top: 24px;
+}
+
+.security-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.security-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.security-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.security-card h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.security-card p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* PII Table */
+.pii-table {
+    overflow-x: auto;
+    margin-top: 24px;
+}
+
+.pii-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.pii-table th {
+    background: var(--primary);
+    color: white;
+    padding: 16px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.pii-table td {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.pii-table tr:hover {
+    background: var(--bg);
+}
+
+.pii-table code {
+    background: var(--bg);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    color: var(--primary);
+}
+
+/* Comparison Grid */
+.comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    margin-top: 24px;
+}
+
+.comparison-card {
+    border: 2px solid;
+    border-radius: var(--radius);
+    padding: 24px;
+}
+
+.comparison-card.real-call {
+    border-color: #1976d2;
+    background: linear-gradient(135deg, #e3f2fd, #ffffff);
+}
+
+.comparison-card.ai-call {
+    border-color: #7b1fa2;
+    background: linear-gradient(135deg, #f3e5f5, #ffffff);
+}
+
+.comparison-card h3 {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 16px;
+}
+
+.comparison-card ul {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px 0;
+}
+
+.comparison-card li {
+    padding: 8px 0;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.comparison-card .note {
+    margin-top: 16px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+/* FAQ */
+.faq-list {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    margin-top: 24px;
+}
+
+.faq-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 24px;
+    border-left: 4px solid var(--primary);
+}
+
+.faq-item h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.faq-item p {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* CTA Section */
+.cta-section {
+    background: linear-gradient(135deg, var(--primary), #0d47a1);
+    color: white;
+    text-align: center;
+}
+
+.cta-section h2 {
+    color: white;
+    border-bottom: 3px solid rgba(255, 255, 255, 0.3);
+}
+
+.cta-box {
+    padding: 20px 0;
+}
+
+.cta-box h2 {
+    font-size: 32px;
+    margin-bottom: 16px;
+}
+
+.cta-box p {
+    font-size: 18px;
+    margin-bottom: 24px;
+    opacity: 0.95;
+}
+
+.btn-large {
+    padding: 16px 32px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .pii-redaction-page {
+        padding: 20px 16px;
+    }
+
+    .info-section {
+        padding: 24px 16px;
+    }
+
+    .security-grid,
+    .comparison-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .process-step {
+        flex-direction: column;
+        text-align: center;
+    }
+}
+</style>
+{% endblock %}
