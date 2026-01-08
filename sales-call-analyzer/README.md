@@ -36,8 +36,6 @@ A secure, self-hosted sales call analysis tool. Upload audio recordings, get PII
 - 📤 **Export Options** - CSV, JSON, PDF, TXT, and SRT subtitle exports
 
 ### Developer Tools
-- 🔌 **REST API v1** - Programmatic access with API key authentication
-- 🔔 **Webhooks** - Real-time notifications for call events (completed, failed, scored)
 - ⚡ **Celery/Redis** - Optional distributed job queue for scalability
 
 ## Quick Start
@@ -161,19 +159,19 @@ Recommended settings:
          ┌──────────────────────────────────────────────────────┘
          ▼
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│    Score    │───>│   Keywords  │───>│  Generate   │───>│   Webhook   │
+│    Score    │───>│   Keywords  │───>│  Generate   │───>│    Email    │
 │  (Rubrics)  │    │  Tracking   │    │    PDFs     │    │   Notify    │
 └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
 ```
 
-1. **Upload**: Trainer uploads audio file via web interface or REST API
+1. **Upload**: Trainer uploads audio file via web interface
 2. **Transcribe**: Whisper converts audio to text locally
 3. **Redact**: Presidio detects and redacts PII (names, numbers, etc.)
 4. **Analyze**: Redacted transcript sent to GPT-4o for coaching analysis
 5. **Score**: Automated scoring against customizable rubrics
 6. **Keywords**: Track competitor mentions, objections, and custom keywords
 7. **Generate**: WeasyPrint creates PDF reports
-8. **Notify**: Webhooks triggered for integrations, email sent to trainer
+8. **Notify**: Email sent to trainer
 
 ## Security
 
@@ -229,88 +227,6 @@ DATABASE_PATH=/data/sales_calls.db
 | `USE_CELERY` | No | `false` | Enable distributed job processing |
 
 \* Either Resend or SMTP configuration required for email
-
-## REST API
-
-The Sales Call Analyzer provides a REST API for programmatic access.
-
-### Authentication
-
-Create API keys from the web interface (Developers → API Keys). Include in requests:
-
-```bash
-curl -H "X-API-Key: sk_your_key_here" https://your-domain.com/api/v1/calls
-# OR
-curl -H "Authorization: Bearer sk_your_key_here" https://your-domain.com/api/v1/calls
-```
-
-### Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/health` | Health check (no auth) |
-| `GET` | `/api/v1/calls` | List all calls |
-| `GET` | `/api/v1/calls/{id}` | Get call details |
-| `POST` | `/api/v1/calls` | Upload new call |
-| `GET` | `/api/v1/calls/{id}/score` | Get call score |
-| `GET` | `/api/v1/calls/{id}/keywords` | Get detected keywords |
-| `GET` | `/api/v1/analytics/summary` | Get analytics summary |
-| `GET` | `/api/v1/analytics/reps` | Get rep analytics |
-| `GET` | `/api/v1/keys` | List API keys (admin) |
-| `POST` | `/api/v1/keys` | Create API key (admin) |
-| `DELETE` | `/api/v1/keys/{id}` | Delete API key (admin) |
-| `GET` | `/api/v1/webhooks` | List webhooks (admin) |
-| `POST` | `/api/v1/webhooks` | Create webhook (admin) |
-| `DELETE` | `/api/v1/webhooks/{id}` | Delete webhook (admin) |
-
-### Permissions
-
-- `read` - View calls and analytics
-- `write` - Upload calls
-- `admin` - Manage API keys and webhooks
-
-## Webhooks
-
-Receive real-time notifications when events occur. Configure webhooks from the web interface (Developers → Webhooks).
-
-### Events
-
-| Event | Description |
-|-------|-------------|
-| `call.uploaded` | New call uploaded |
-| `call.processing` | Processing started |
-| `call.completed` | Analysis complete |
-| `call.failed` | Processing failed |
-| `score.generated` | Score calculated |
-
-### Payload Format
-
-```json
-{
-  "event": "call.completed",
-  "timestamp": "2026-01-07T12:00:00Z",
-  "data": {
-    "call_id": "abc-123",
-    "filename": "sales_call.mp3",
-    "status": "complete",
-    "score": 85,
-    "duration_min": 15.5
-  }
-}
-```
-
-### Signature Verification
-
-Each webhook includes `X-Webhook-Signature` header for verification:
-
-```python
-import hmac
-import hashlib
-
-def verify_signature(payload_body, signature_header, secret):
-    expected = hmac.new(secret.encode(), payload_body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(f"sha256={expected}", signature_header)
-```
 
 ## Scoring Rubrics
 

@@ -27,8 +27,7 @@ import time
 
 from config import Config
 
-# Import API v1 blueprint
-from api_v1 import api_v1, trigger_webhook
+# API v1 and webhooks removed - no longer offering developer features
 
 # Simple in-memory rate limiter (use Redis in production)
 _rate_limit_store = defaultdict(list)
@@ -96,7 +95,7 @@ def add_security_headers(response):
 os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
 
 # Register API blueprint
-app.register_blueprint(api_v1)
+# API v1 blueprint registration removed
 
 # Token serializer for magic links
 serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
@@ -1645,214 +1644,7 @@ def health():
     return "OK"
 
 
-# ============================================================================
-# API Keys Management (Web Interface)
-# ============================================================================
-
-@app.route("/api-keys")
-@login_required
-def api_keys():
-    """View and manage API keys."""
-    import hashlib
-    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE
-    import os
-    
-    conn = _get_db_connection()
-    database_url = os.environ.get("DATABASE_URL")
-    
-    if database_url and PSYCOPG2_AVAILABLE:
-        from psycopg2.extras import RealDictCursor
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        param = "%s"
-    else:
-        cursor = conn.cursor()
-        param = "?"
-    
-    cursor.execute(
-        f"SELECT id, name, permissions, last_used, created_at, is_active FROM api_keys WHERE user_email = {param}",
-        (session["user_email"],)
-    )
-    keys = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    
-    return render_template("api_keys.html", keys=keys)
-
-
-@app.route("/api-keys/create", methods=["POST"])
-@login_required
-def create_api_key():
-    """Create a new API key."""
-    import hashlib
-    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE
-    import os
-    
-    name = request.form.get("name", "My API Key").strip()
-    permissions = request.form.get("permissions", "read,write")
-    
-    # Generate new key
-    raw_key = f"sk_{uuid.uuid4().hex}"
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    
-    conn = _get_db_connection()
-    cursor = conn.cursor()
-    database_url = os.environ.get("DATABASE_URL")
-    param = "%s" if database_url else "?"
-    
-    cursor.execute(f"""
-        INSERT INTO api_keys (user_email, key_hash, name, permissions)
-        VALUES ({param}, {param}, {param}, {param})
-    """, (session["user_email"], key_hash, name, permissions))
-    
-    conn.commit()
-    conn.close()
-    
-    # Show the key once (flash with special styling)
-    flash(f"API Key created: {raw_key}", "api_key")
-    flash("Save this key now - it won't be shown again!", "warning")
-    
-    return redirect(url_for("api_keys"))
-
-
-@app.route("/api-keys/<int:key_id>/delete", methods=["POST"])
-@login_required
-def delete_api_key(key_id):
-    """Delete an API key."""
-    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE
-    import os
-    
-    conn = _get_db_connection()
-    cursor = conn.cursor()
-    database_url = os.environ.get("DATABASE_URL")
-    param = "%s" if database_url else "?"
-    
-    cursor.execute(
-        f"DELETE FROM api_keys WHERE id = {param} AND user_email = {param}",
-        (key_id, session["user_email"])
-    )
-    deleted = cursor.rowcount > 0
-    
-    conn.commit()
-    conn.close()
-    
-    if deleted:
-        flash("API key deleted.", "success")
-    else:
-        flash("API key not found.", "error")
-    
-    return redirect(url_for("api_keys"))
-
-
-# ============================================================================
-# Webhooks Management (Web Interface)
-# ============================================================================
-
-@app.route("/webhooks")
-@login_required
-def webhooks():
-    """View and manage webhooks."""
-    from api_v1 import _get_db_connection, PSYCOPG2_AVAILABLE, WEBHOOK_EVENTS
-    import os
-    
-    conn = _get_db_connection()
-    database_url = os.environ.get("DATABASE_URL")
-    
-    if database_url and PSYCOPG2_AVAILABLE:
-        from psycopg2.extras import RealDictCursor
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        param = "%s"
-    else:
-        cursor = conn.cursor()
-        param = "?"
-    
-    cursor.execute(
-        f"SELECT id, url, events, is_active, last_triggered, created_at FROM webhooks WHERE user_email = {param}",
-        (session["user_email"],)
-    )
-    user_webhooks = [dict(row) for row in cursor.fetchall()]
-    
-    # Parse events JSON
-    import json
-    for wh in user_webhooks:
-        wh["events"] = json.loads(wh.get("events", "[]"))
-    
-    conn.close()
-    
-    return render_template(
-        "webhooks.html",
-        webhooks=user_webhooks,
-        available_events=WEBHOOK_EVENTS,
-    )
-
-
-@app.route("/webhooks/create", methods=["POST"])
-@login_required
-def create_webhook():
-    """Create a new webhook."""
-    from api_v1 import _get_db_connection, WEBHOOK_EVENTS
-    import os
-    import json
-    
-    url = request.form.get("url", "").strip()
-    events = request.form.getlist("events")
-    
-    if not url:
-        flash("URL is required.", "error")
-        return redirect(url_for("webhooks"))
-    
-    # Validate events
-    events = [e for e in events if e in WEBHOOK_EVENTS]
-    if not events:
-        events = ["call.completed"]
-    
-    # Generate secret
-    secret = f"whsec_{uuid.uuid4().hex}"
-    
-    conn = _get_db_connection()
-    cursor = conn.cursor()
-    database_url = os.environ.get("DATABASE_URL")
-    param = "%s" if database_url else "?"
-    
-    cursor.execute(f"""
-        INSERT INTO webhooks (user_email, url, events, secret)
-        VALUES ({param}, {param}, {param}, {param})
-    """, (session["user_email"], url, json.dumps(events), secret))
-    
-    conn.commit()
-    conn.close()
-    
-    flash(f"Webhook created! Secret: {secret}", "api_key")
-    flash("Save this secret - it's used to verify webhook signatures.", "warning")
-    
-    return redirect(url_for("webhooks"))
-
-
-@app.route("/webhooks/<int:webhook_id>/delete", methods=["POST"])
-@login_required
-def delete_webhook(webhook_id):
-    """Delete a webhook."""
-    from api_v1 import _get_db_connection
-    import os
-    
-    conn = _get_db_connection()
-    cursor = conn.cursor()
-    database_url = os.environ.get("DATABASE_URL")
-    param = "%s" if database_url else "?"
-    
-    cursor.execute(
-        f"DELETE FROM webhooks WHERE id = {param} AND user_email = {param}",
-        (webhook_id, session["user_email"])
-    )
-    deleted = cursor.rowcount > 0
-    
-    conn.commit()
-    conn.close()
-    
-    if deleted:
-        flash("Webhook deleted.", "success")
-    else:
-        flash("Webhook not found.", "error")
-    
-    return redirect(url_for("webhooks"))
+# API Keys and Webhooks management removed - no longer offering developer features
 
 
 # ============================================================================

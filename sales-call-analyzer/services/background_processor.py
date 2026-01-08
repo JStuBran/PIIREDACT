@@ -227,20 +227,6 @@ class BackgroundProcessor:
             secure_storage.delete_file_secure(file_path)
 
             logger.info(f"[{job_id}] Analysis complete!")
-            
-            # Trigger webhook for completed call (with sanitized filename)
-            safe_filename = sanitize_string(filename)
-            self._trigger_webhook(
-                user_email=user_email,
-                event="call.completed",
-                payload={
-                    "call_id": job_id,
-                    "filename": safe_filename,
-                    "status": "complete",
-                    "score": call_score.get("overall_score") if call_score else None,
-                    "duration_min": transcription.get("duration_min", 0) if transcription else 0,
-                }
-            )
 
         except Exception as e:
             # SECURITY: Use safe exception logging
@@ -256,18 +242,6 @@ class BackgroundProcessor:
                 secure_storage.delete_file_secure(file_path)
             except Exception:
                 pass
-            
-            # Trigger webhook for failed call (with sanitized data)
-            safe_filename = sanitize_string(filename)
-            self._trigger_webhook(
-                user_email=user_email,
-                event="call.failed",
-                payload={
-                    "call_id": job_id,
-                    "filename": safe_filename,
-                    "error": "[PROCESSING_ERROR]",
-                }
-            )
         finally:
             # SECURITY: Ensure original_text is cleared from memory
             if original_text:
@@ -276,16 +250,4 @@ class BackgroundProcessor:
                 transcription.pop("original_text", None)
             
             self._active_jobs.discard(job_id)
-    
-    def _trigger_webhook(self, user_email: str, event: str, payload: dict):
-        """Trigger webhooks for an event (non-blocking)."""
-        try:
-            from api_v1 import trigger_webhook
-            trigger_webhook(
-                user_email=user_email,
-                event=event,
-                payload=payload,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to trigger webhook: {e}")
 
