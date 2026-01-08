@@ -15,8 +15,10 @@ from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, current_app
 
 from config import Config
+from services.logging_security import get_secure_logger, sanitize_string, sanitize_dict
+from services.secure_storage import SecureStorageService
 
-logger = logging.getLogger(__name__)
+logger = get_secure_logger(__name__)
 
 # Create API blueprint
 api_v1 = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -298,8 +300,24 @@ def list_calls():
         offset=offset,
     )
     
-    # Strip sensitive data
+    # SECURITY: Strip sensitive data and ensure original_text is never returned
     for call in calls:
+        call.pop("file_path", None)
+        
+        # Remove original_text from transcription_json
+        if "transcription_json" in call and call["transcription_json"]:
+            transcription = call["transcription_json"]
+            if isinstance(transcription, str):
+                try:
+                    transcription = json.loads(transcription)
+                except (json.JSONDecodeError, TypeError):
+                    transcription = {}
+            if isinstance(transcription, dict):
+                transcription.pop("original_text", None)
+                call["transcription_json"] = transcription
+        
+        # Sanitize call data
+        call = sanitize_dict(call)
         call.pop("transcription_json", None)  # Large, use /calls/:id for full data
         call.pop("file_path", None)
     
@@ -333,8 +351,23 @@ def get_call(call_id):
     if call["user_email"] != request.api_user_email:
         return jsonify({"error": "Access denied"}), 403
     
-    # Remove file path
+    # SECURITY: Remove sensitive data before returning
     call.pop("file_path", None)
+    
+    # SECURITY: Ensure original_text is never returned via API
+    if "transcription_json" in call and call["transcription_json"]:
+        transcription = call["transcription_json"]
+        if isinstance(transcription, str):
+            try:
+                transcription = json.loads(transcription)
+            except (json.JSONDecodeError, TypeError):
+                transcription = {}
+        if isinstance(transcription, dict):
+            transcription.pop("original_text", None)
+            call["transcription_json"] = transcription
+    
+    # Sanitize call data
+    call = sanitize_dict(call)
     
     return jsonify({"call": call})
 
@@ -363,11 +396,18 @@ def upload_call():
     from services import DatabaseService
     
     db = DatabaseService()
+    secure_storage = SecureStorageService()
+    
     job_id = str(uuid.uuid4())
     filename = secure_filename(file.filename)
-    file_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_{filename}")
     
-    file.save(file_path)
+    # Read file content and save securely
+    file_content = file.read()
+    file_path = secure_storage.save_file_secure(
+        file_content=file_content,
+        job_id=job_id,
+        filename=filename,
+    )
     
     # Create call record
     rep_name = request.form.get("rep_name", "")
@@ -753,11 +793,14 @@ def trigger_webhook(
         if event not in subscribed_events and event != "test":
             continue
         
-        # Prepare payload
+        # SECURITY: Sanitize payload before sending
+        safe_payload = sanitize_dict(payload.copy())
+        
+        # Prepare payload with sanitized data
         full_payload = {
             "event": event,
             "timestamp": datetime.utcnow().isoformat(),
-            "data": payload,
+            "data": safe_payload,
         }
         payload_json = json.dumps(full_payload)
         

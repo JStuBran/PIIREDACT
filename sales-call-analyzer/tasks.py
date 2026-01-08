@@ -87,7 +87,36 @@ def process_call_task(
         logger.info(f"[{job_id}] Starting transcription...")
         db.update_call(job_id, status="transcribing")
         
-        transcription = transcriber.transcribe_and_redact(file_path)
+        # SECURITY: Read encrypted file if needed
+        from services.secure_storage import SecureStorageService
+        secure_storage = SecureStorageService()
+        
+        try:
+            # Try to read as encrypted file first
+            file_content = secure_storage.read_file_secure(file_path)
+            # Write to temp file for transcription
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_path)[1]) as temp_file:
+                temp_file.write(file_content)
+                temp_file_path = temp_file.name
+        except Exception:
+            # Fallback to direct file path (for unencrypted files)
+            temp_file_path = file_path
+        
+        transcription = transcriber.transcribe_and_redact(temp_file_path)
+        
+        # SECURITY: Clear original_text from memory immediately
+        original_text = transcription.get("original_text")
+        if original_text:
+            transcription.pop("original_text", None)
+            del original_text
+        
+        # Clean up temp file if we created one
+        if temp_file_path != file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except Exception:
+                pass
         
         # Step 2: Analyze with GPT-4o
         self.update_state(state="ANALYZING", meta={"step": "analyzing"})
@@ -168,9 +197,13 @@ def process_call_task(
         stats["keywords"] = keywords_data
         stats["call_phases"] = call_phases
         
-        # SECURITY: Remove original_text before storing
+        # SECURITY: Remove original_text before storing (already removed, but double-check)
         transcription_safe = transcription.copy()
         transcription_safe.pop("original_text", None)
+        
+        # SECURITY: Ensure original_text is cleared from memory
+        if "original_text" in transcription:
+            del transcription["original_text"]
         
         db.update_call(
             job_id,
@@ -183,11 +216,10 @@ def process_call_task(
             stats_pdf_path=stats_pdf_path,
         )
         
-        # Clean up audio file
-        try:
-            os.unlink(file_path)
-        except Exception:
-            pass
+        # SECURITY: Clean up audio file securely
+        from services.secure_storage import SecureStorageService
+        secure_storage = SecureStorageService()
+        secure_storage.delete_file_secure(file_path)
         
         logger.info(f"[{job_id}] Analysis complete!")
         
@@ -198,8 +230,21 @@ def process_call_task(
         }
         
     except Exception as e:
-        logger.exception(f"[{job_id}] Analysis failed: {e}")
-        db.update_call(job_id, status="error", error=str(e))
+        # SECURITY: Use safe exception logging
+        from services.logging_security import safe_log_exception, sanitize_string
+        safe_log_exception(logger, f"[{job_id}] Analysis failed", exc_info=True)
+        
+        # Sanitize error message before storing
+        error_msg = sanitize_string(str(e))
+        db.update_call(job_id, status="error", error=error_msg)
+        
+        # SECURITY: Clean up file even on error
+        try:
+            from services.secure_storage import SecureStorageService
+            secure_storage = SecureStorageService()
+            secure_storage.delete_file_secure(file_path)
+        except Exception:
+            pass
         
         # Retry on transient errors
         if self.request.retries < self.max_retries:

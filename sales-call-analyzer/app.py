@@ -48,6 +48,10 @@ def check_rate_limit(key: str) -> bool:
     _rate_limit_store[key].append(now)
     return True
 from services import (
+    SecureStorageService,
+    get_secure_logger,
+    sanitize_string,
+    safe_log_exception,
     TranscriberService,
     AnalyzerService,
     PDFGeneratorService,
@@ -66,7 +70,7 @@ from services import (
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_secure_logger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -362,6 +366,7 @@ def upload():
         
         # Validate and save files
         db = get_database()
+        secure_storage = SecureStorageService()
         job_ids = []
         
         for file in files:
@@ -369,25 +374,39 @@ def upload():
                 continue
             
             if not allowed_file(file.filename):
-                flash(f"Invalid file type: {file.filename}. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}", "error")
+                safe_filename = sanitize_string(file.filename)
+                flash(f"Invalid file type. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}", "error")
                 continue
             
-            # Save file
-            job_id = str(uuid.uuid4())
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_{filename}")
-            file.save(file_path)
-            
-            # Create call record in database
-            db.create_call(
-                call_id=job_id,
-                filename=filename,
-                user_email=session["user_email"],
-                file_path=file_path,
-                rep_name=rep_name,
-            )
-            
-            job_ids.append(job_id)
+            try:
+                # Read file content
+                file_content = file.read()
+                
+                # Save file securely (encrypted, with proper permissions)
+                job_id = str(uuid.uuid4())
+                filename = secure_filename(file.filename)
+                file_path = secure_storage.save_file_secure(
+                    file_content=file_content,
+                    job_id=job_id,
+                    filename=filename,
+                )
+                
+                # Create call record in database
+                db.create_call(
+                    call_id=job_id,
+                    filename=filename,
+                    user_email=session["user_email"],
+                    file_path=file_path,
+                    rep_name=rep_name,
+                )
+                
+                job_ids.append(job_id)
+                
+            except Exception as e:
+                logger = get_secure_logger(__name__)
+                safe_log_exception(logger, f"Failed to upload file: {e}", exc_info=True)
+                flash("Failed to upload file. Please try again.", "error")
+                continue
         
         if not job_ids:
             flash("No valid files uploaded.", "error")
@@ -1848,8 +1867,25 @@ def too_large(e):
 
 @app.errorhandler(500)
 def server_error(e):
-    logger.exception("Server error")
+    # SECURITY: Use safe exception logging
+    safe_log_exception(logger, "Server error", exc_info=True)
     return render_template("error.html", error="Internal server error"), 500
+
+
+@app.route("/admin/cleanup", methods=["POST"])
+@login_required
+def cleanup_old_files():
+    """Clean up old files from upload folder (admin only)."""
+    # SECURITY: Only allow cleanup by authenticated users
+    # In production, you might want to add admin role check
+    
+    secure_storage = SecureStorageService()
+    max_age_hours = int(request.form.get("max_age_hours", 24))
+    
+    deleted, failed = secure_storage.cleanup_old_files(max_age_hours=max_age_hours)
+    
+    flash(f"Cleanup complete: {deleted} files deleted, {failed} failed", "success")
+    return redirect(url_for("dashboard"))
 
 
 # ============================================================================

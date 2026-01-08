@@ -15,6 +15,8 @@ from .scoring import ScoringService
 from .conversation_intelligence import ConversationIntelligenceService
 from .keyword_tracking import KeywordTrackingService
 from .playlists import PlaylistService
+from .secure_storage import SecureStorageService
+from .logging_security import get_secure_logger, sanitize_string, sanitize_dict, safe_log_exception
 
 __all__ = [
     "TranscriberService",
@@ -32,5 +34,10 @@ __all__ = [
     "ConversationIntelligenceService",
     "KeywordTrackingService",
     "PlaylistService",
+    "SecureStorageService",
+    "get_secure_logger",
+    "sanitize_string",
+    "sanitize_dict",
+    "safe_log_exception",
 ]
 

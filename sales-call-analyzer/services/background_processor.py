@@ -1,10 +1,14 @@
 """Background job processor for async call analysis."""
 
 import logging
+import os
 import threading
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+from .logging_security import get_secure_logger, safe_log_exception, sanitize_string
+from .secure_storage import SecureStorageService
+
+logger = get_secure_logger(__name__)
 
 
 class BackgroundProcessor:
@@ -58,6 +62,10 @@ class BackgroundProcessor:
         config: Any,
     ):
         """Internal method to process the call."""
+        secure_storage = SecureStorageService()
+        transcription = None
+        original_text = None
+        
         try:
             db = services["database"]
             transcriber = services["transcriber"]
@@ -70,7 +78,36 @@ class BackgroundProcessor:
             logger.info(f"[{job_id}] Starting transcription...")
             db.update_call(job_id, status="transcribing")
 
-            transcription = transcriber.transcribe_and_redact(file_path)
+            # Read encrypted file if needed
+            try:
+                # Try to read as encrypted file first
+                file_content = secure_storage.read_file_secure(file_path)
+                # Write to temp file for transcription
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_path)[1]) as temp_file:
+                    temp_file.write(file_content)
+                    temp_file_path = temp_file.name
+            except Exception:
+                # Fallback to direct file path (for unencrypted files)
+                temp_file_path = file_path
+
+            transcription = transcriber.transcribe_and_redact(temp_file_path)
+            
+            # SECURITY: Extract and clear original_text from memory immediately
+            original_text = transcription.get("original_text")
+            if original_text:
+                # Clear from transcription dict
+                transcription.pop("original_text", None)
+                # Overwrite memory (Python doesn't guarantee this, but we try)
+                del original_text
+                original_text = None
+            
+            # Clean up temp file if we created one
+            if temp_file_path != file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
 
             # Step 2: Analyze with GPT-4o
             logger.info(f"[{job_id}] Analyzing with GPT-4o...")
@@ -186,43 +223,58 @@ class BackgroundProcessor:
                 stats_pdf_path=stats_pdf_path,
             )
 
-            # Clean up audio file
-            try:
-                os.unlink(file_path)
-            except Exception:
-                pass
+            # SECURITY: Clean up audio file securely
+            secure_storage.delete_file_secure(file_path)
 
             logger.info(f"[{job_id}] Analysis complete!")
             
-            # Trigger webhook for completed call
+            # Trigger webhook for completed call (with sanitized filename)
+            safe_filename = sanitize_string(filename)
             self._trigger_webhook(
                 user_email=user_email,
                 event="call.completed",
                 payload={
                     "call_id": job_id,
-                    "filename": filename,
+                    "filename": safe_filename,
                     "status": "complete",
                     "score": call_score.get("overall_score") if call_score else None,
-                    "duration_min": transcription.get("duration_min", 0),
+                    "duration_min": transcription.get("duration_min", 0) if transcription else 0,
                 }
             )
 
         except Exception as e:
-            logger.exception(f"[{job_id}] Analysis failed: {e}")
-            db = services["database"]
-            db.update_call(job_id, status="error", error=str(e))
+            # SECURITY: Use safe exception logging
+            safe_log_exception(logger, f"[{job_id}] Analysis failed", exc_info=True)
             
-            # Trigger webhook for failed call
+            db = services["database"]
+            # Sanitize error message before storing
+            error_msg = sanitize_string(str(e))
+            db.update_call(job_id, status="error", error=error_msg)
+            
+            # SECURITY: Clean up file even on error
+            try:
+                secure_storage.delete_file_secure(file_path)
+            except Exception:
+                pass
+            
+            # Trigger webhook for failed call (with sanitized data)
+            safe_filename = sanitize_string(filename)
             self._trigger_webhook(
                 user_email=user_email,
                 event="call.failed",
                 payload={
                     "call_id": job_id,
-                    "filename": filename,
-                    "error": str(e),
+                    "filename": safe_filename,
+                    "error": "[PROCESSING_ERROR]",
                 }
             )
         finally:
+            # SECURITY: Ensure original_text is cleared from memory
+            if original_text:
+                del original_text
+            if transcription and "original_text" in transcription:
+                transcription.pop("original_text", None)
+            
             self._active_jobs.discard(job_id)
     
     def _trigger_webhook(self, user_email: str, event: str, payload: dict):
