@@ -663,12 +663,21 @@ class PDFGeneratorService:
         
         # Score breakdown section
         score_section = ""
-        if score_data and score_data.get("criteria_scores"):
+        # scores is a dict keyed by criterion ID: {criterion_id: {score: X, reasoning: Y, ...}}
+        scores_dict = score_data.get("scores", {}) if score_data else {}
+        if scores_dict:
             criteria_html = ""
-            for criterion in score_data.get("criteria_scores", []):
-                name = criterion.get("name", "")
-                score = criterion.get("score", 0)
-                max_score = criterion.get("max_score", 5)
+            for criterion_id, criterion_data in scores_dict.items():
+                # Handle both dict and raw score value
+                if isinstance(criterion_data, dict):
+                    name = criterion_data.get("name", criterion_id)
+                    score = criterion_data.get("score", 0)
+                    max_score = criterion_data.get("max_score", 5)
+                else:
+                    name = criterion_id
+                    score = criterion_data
+                    max_score = 5
+                
                 pct = int((score / max_score) * 100) if max_score > 0 else 0
                 
                 # Determine color class
@@ -683,7 +692,7 @@ class PDFGeneratorService:
                 
                 criteria_html += f"""
                 <div class="score-row">
-                    <div class="score-criterion">{self._esc(name)}</div>
+                    <div class="score-criterion">{self._esc(str(name))}</div>
                     <div class="score-bar"><div class="score-bar-fill {color_class}" style="width:{pct}%"></div></div>
                     <div class="score-value">{score}/{max_score}</div>
                 </div>
@@ -704,9 +713,20 @@ class PDFGeneratorService:
         # Conversation intelligence section
         conv_section = ""
         if conv_intel:
-            talk_ratio = conv_intel.get("talk_to_listen_ratio", 0)
-            questions_asked = conv_intel.get("questions_asked", 0)
-            objections = conv_intel.get("objections_detected", 0)
+            # Access nested talk_patterns structure
+            talk_patterns = conv_intel.get("talk_patterns", {})
+            agent_ratio = talk_patterns.get("agent_talk_ratio", 50)
+            customer_ratio = talk_patterns.get("customer_talk_ratio", 50)
+            # Calculate talk:listen as agent:customer ratio
+            talk_ratio = round(agent_ratio / customer_ratio, 1) if customer_ratio > 0 else 1.0
+            
+            # Access nested questions structure
+            questions_data = conv_intel.get("questions", {})
+            questions_asked = questions_data.get("total_questions", 0)
+            
+            # Access nested objections structure
+            objections_data = conv_intel.get("objections", {})
+            objections = objections_data.get("count", 0)
             
             conv_section = f"""
             <div class="section">
@@ -964,9 +984,21 @@ class PDFGeneratorService:
         # Conversation intelligence metrics
         conv_metrics = ""
         if conv_intel:
-            talk_ratio = conv_intel.get("talk_to_listen_ratio", 0)
-            monologues = conv_intel.get("monologues", [])
-            longest_monologue = max([m.get("duration", 0) for m in monologues]) if monologues else 0
+            # Access nested talk_patterns structure
+            talk_patterns = conv_intel.get("talk_patterns", {})
+            agent_ratio = talk_patterns.get("agent_talk_ratio", 50)
+            customer_ratio = talk_patterns.get("customer_talk_ratio", 50)
+            talk_ratio = round(agent_ratio / customer_ratio, 1) if customer_ratio > 0 else 1.0
+            
+            # Access nested monologues structure
+            monologues_data = conv_intel.get("monologues", {})
+            monologue_instances = monologues_data.get("instances", [])
+            monologue_count = monologues_data.get("count", 0)
+            longest_monologue = max([m.get("duration_sec", 0) for m in monologue_instances]) if monologue_instances else 0
+            
+            # Access nested engagement structure for interruptions
+            engagement_data = conv_intel.get("engagement", {})
+            interruptions = engagement_data.get("interruptions", 0)
             
             conv_metrics = f"""
             <div class="section">
@@ -980,7 +1012,7 @@ class PDFGeneratorService:
                         <div class="kpi-label">Talk:Listen</div>
                     </div>
                     <div class="kpi">
-                        <div class="kpi-value">{len(monologues)}</div>
+                        <div class="kpi-value">{monologue_count}</div>
                         <div class="kpi-label">Monologues</div>
                     </div>
                     <div class="kpi">
@@ -988,7 +1020,7 @@ class PDFGeneratorService:
                         <div class="kpi-label">Longest Monologue</div>
                     </div>
                     <div class="kpi">
-                        <div class="kpi-value">{conv_intel.get("interruptions", 0)}</div>
+                        <div class="kpi-value">{interruptions}</div>
                         <div class="kpi-label">Interruptions</div>
                     </div>
                 </div>
