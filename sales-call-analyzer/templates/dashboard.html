@@ -140,6 +140,7 @@
                 <thead>
                     <tr>
                         <th>Filename</th>
+                        <th>Type</th>
                         <th>Rep</th>
                         <th>Status</th>
                         <th>Created</th>
@@ -154,6 +155,13 @@
                                 <span class="file-icon">🎙️</span>
                                 <span class="file-name">{{ call.filename }}</span>
                             </div>
+                        </td>
+                        <td>
+                            {% if call.call_type == 'ai_agent' %}
+                                <span class="call-type-badge call-type-ai">🤖 AI Agent</span>
+                            {% else %}
+                                <span class="call-type-badge call-type-real">👤 Real Call</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if call.rep_name %}
@@ -528,6 +536,30 @@
 
 .calls-table tbody tr:hover .file-name {
     color: var(--primary);
+}
+
+.call-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.call-type-real {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    color: #1976d2;
+    border: 1px solid #90caf9;
+}
+
+.call-type-ai {
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    color: #7b1fa2;
+    border: 1px solid #ce93d8;
 }
 
 .rep-badge {

@@ -54,6 +54,15 @@
                 </select>
             </div>
 
+            <div class="filter-group">
+                <label for="call_type">Call Type</label>
+                <select id="call_type" name="call_type" class="form-input">
+                    <option value="">All Types</option>
+                    <option value="real" {% if call_type_filter == 'real' %}selected{% endif %}>Real Calls</option>
+                    <option value="ai_agent" {% if call_type_filter == 'ai_agent' %}selected{% endif %}>AI Agent Calls</option>
+                </select>
+            </div>
+
             <div class="filter-actions">
                 <button type="submit" class="btn btn-primary">Apply Filters</button>
                 <a href="{{ url_for('history') }}" class="btn btn-outline">Clear</a>
@@ -77,6 +86,7 @@
                             <input type="checkbox" id="select-all" title="Select all">
                         </th>
                         <th>Filename</th>
+                        <th>Type</th>
                         <th>Rep</th>
                         <th>Status</th>
                         <th>Created</th>
@@ -96,6 +106,13 @@
                                 <span class="file-icon">🎙️</span>
                                 <span class="file-name">{{ call.filename }}</span>
                             </div>
+                        </td>
+                        <td>
+                            {% if call.call_type == 'ai_agent' %}
+                                <span class="call-type-badge call-type-ai">🤖 AI Agent</span>
+                            {% else %}
+                                <span class="call-type-badge call-type-real">👤 Real</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if call.rep_name %}
@@ -139,7 +156,7 @@
         {% if total_pages > 1 %}
         <div class="pagination">
             {% if page > 1 %}
-            <a href="{{ url_for('history', page=page-1, rep=rep_filter, status=status_filter, search=search_query) }}" 
+            <a href="{{ url_for('history', page=page-1, rep=rep_filter, status=status_filter, call_type=call_type_filter, search=search_query) }}" 
                class="btn btn-outline">Previous</a>
             {% endif %}
 
@@ -148,7 +165,7 @@
             </span>
 
             {% if page < total_pages %}
-            <a href="{{ url_for('history', page=page+1, rep=rep_filter, status=status_filter, search=search_query) }}" 
+            <a href="{{ url_for('history', page=page+1, rep=rep_filter, status=status_filter, call_type=call_type_filter, search=search_query) }}" 
                class="btn btn-outline">Next</a>
             {% endif %}
         </div>
@@ -261,9 +278,33 @@ updateCompareButton();
 
 .filters-form {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr auto;
+    grid-template-columns: 2fr 1fr 1fr 1fr auto;
     gap: 16px;
     align-items: end;
+}
+
+.call-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.call-type-real {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    color: #1976d2;
+    border: 1px solid #90caf9;
+}
+
+.call-type-ai {
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    color: #7b1fa2;
+    border: 1px solid #ce93d8;
 }
 
 .filter-group {

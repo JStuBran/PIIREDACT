@@ -7,7 +7,14 @@
     <div class="report-header">
         <div>
             <h1>Call Analysis Report</h1>
-            <p class="subtitle">{{ job.filename }} &middot; {{ job.completed_at.strftime('%Y-%m-%d') if job.completed_at else '' }}</p>
+            <p class="subtitle">
+                {{ job.filename }} &middot; {{ job.completed_at.strftime('%Y-%m-%d') if job.completed_at else '' }}
+                {% if job.call_type == 'ai_agent' %}
+                    <span class="call-type-badge call-type-ai" style="margin-left: 12px;">🤖 AI Agent Call</span>
+                {% else %}
+                    <span class="call-type-badge call-type-real" style="margin-left: 12px;">👤 Real Call</span>
+                {% endif %}
+            </p>
         </div>
         <div class="report-actions">
             <a href="{{ url_for('transcript', job_id=job.id) }}" class="btn btn-outline">📝 View Transcript</a>
@@ -753,6 +760,31 @@
     border: 1px solid #fbbf24;
     border-radius: var(--radius-sm);
     font-size: 14px;
+}
+
+/* Call Type Badges */
+.call-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.call-type-real {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    color: #1976d2;
+    border: 1px solid #90caf9;
+}
+
+.call-type-ai {
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    color: #7b1fa2;
+    border: 1px solid #ce93d8;
 }
 </style>
 {% endblock %}

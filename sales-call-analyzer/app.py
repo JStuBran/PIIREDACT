@@ -360,8 +360,13 @@ def upload():
             flash("No audio file provided.", "error")
             return render_template("upload.html")
         
-        # Get optional rep name from form
+        # Get optional rep name and call type from form
         rep_name = request.form.get("rep_name", "").strip() or None
+        call_type = request.form.get("call_type", "real").strip()
+        
+        # Validate call_type
+        if call_type not in ["real", "ai_agent"]:
+            call_type = "real"
         
         # Validate and save files
         db = get_database()
@@ -397,6 +402,7 @@ def upload():
                     user_email=session["user_email"],
                     file_path=file_path,
                     rep_name=rep_name,
+                    call_type=call_type,
                 )
                 
                 job_ids.append(job_id)
@@ -684,6 +690,7 @@ def history():
     per_page = 20
     rep_filter = request.args.get("rep", "")
     status_filter = request.args.get("status", "")
+    call_type_filter = request.args.get("call_type", "")
     search_query = request.args.get("search", "").strip()
     
     # Build filters
@@ -692,6 +699,8 @@ def history():
         filters["rep_name"] = rep_filter
     if status_filter:
         filters["status"] = status_filter
+    if call_type_filter:
+        filters["call_type"] = call_type_filter
     
     # Get calls
     offset = (page - 1) * per_page
@@ -715,6 +724,8 @@ def history():
             calls = [c for c in calls if c.get("rep_name") == rep_filter]
         if status_filter:
             calls = [c for c in calls if c.get("status") == status_filter]
+        if call_type_filter:
+            calls = [c for c in calls if c.get("call_type") == call_type_filter]
     
     # Get total count
     total_count = db.count_calls(**filters)
@@ -734,6 +745,7 @@ def history():
         per_page=per_page,
         rep_filter=rep_filter,
         status_filter=status_filter,
+        call_type_filter=call_type_filter,
         search_query=search_query,
         reps=reps,
     )

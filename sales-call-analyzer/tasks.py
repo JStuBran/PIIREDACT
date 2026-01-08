@@ -83,8 +83,16 @@ def process_call_task(
         # Update task state
         self.update_state(state="TRANSCRIBING", meta={"step": "transcribing"})
         
-        # Step 1: Transcribe and redact
-        logger.info(f"[{job_id}] Starting transcription...")
+        # Get call record to check call_type
+        call_record = db.get_call(job_id)
+        call_type = call_record.get("call_type", "real") if call_record else "real"
+        
+        # Step 1: Transcribe (with or without redaction based on call type)
+        if call_type == "ai_agent":
+            logger.info(f"[{job_id}] Starting transcription (AI agent call - no redaction)...")
+        else:
+            logger.info(f"[{job_id}] Starting transcription (real call - with PII redaction)...")
+        
         db.update_call(job_id, status="transcribing")
         
         # SECURITY: Read encrypted file if needed
@@ -103,13 +111,21 @@ def process_call_task(
             # Fallback to direct file path (for unencrypted files)
             temp_file_path = file_path
         
-        transcription = transcriber.transcribe_and_redact(temp_file_path)
-        
-        # SECURITY: Clear original_text from memory immediately
-        original_text = transcription.get("original_text")
-        if original_text:
-            transcription.pop("original_text", None)
-            del original_text
+        # Conditionally transcribe based on call type
+        if call_type == "ai_agent":
+            # AI agent calls: no PII redaction needed
+            transcription = transcriber.transcribe_only(temp_file_path)
+            # For AI agent calls, original_text and redacted_text are the same
+            # No need to clear original_text since it's not sensitive
+        else:
+            # Real calls: transcribe with PII redaction
+            transcription = transcriber.transcribe_and_redact(temp_file_path)
+            
+            # SECURITY: Clear original_text from memory immediately
+            original_text = transcription.get("original_text")
+            if original_text:
+                transcription.pop("original_text", None)
+                del original_text
         
         # Clean up temp file if we created one
         if temp_file_path != file_path and os.path.exists(temp_file_path):

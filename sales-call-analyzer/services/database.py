@@ -103,6 +103,7 @@ class DatabaseService:
                 user_email {text_type} NOT NULL,
                 rep_name {text_type},
                 file_path {text_type},
+                call_type {text_type} DEFAULT 'real',
                 created_at TIMESTAMP {timestamp_default},
                 completed_at TIMESTAMP,
                 status {text_type},
@@ -114,6 +115,15 @@ class DatabaseService:
                 stats_pdf_path {text_type}
             )
         """)
+        
+        # Migration: Add call_type column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute(f"""
+                ALTER TABLE calls ADD COLUMN call_type {text_type} DEFAULT 'real'
+            """)
+        except Exception:
+            # Column already exists, ignore
+            pass
 
         # Create annotations table
         cursor.execute(f"""
@@ -151,6 +161,7 @@ class DatabaseService:
         user_email: str,
         file_path: str,
         rep_name: Optional[str] = None,
+        call_type: str = "real",
     ) -> Dict[str, Any]:
         """
         Create a new call record.
@@ -161,6 +172,7 @@ class DatabaseService:
             user_email: User who uploaded the call
             file_path: Path to audio file
             rep_name: Optional rep name
+            call_type: Type of call - "real" (with PII redaction) or "ai_agent" (no redaction)
 
         Returns:
             Call record dict
@@ -170,9 +182,9 @@ class DatabaseService:
 
         param_style = "%s" if self.db_type == "postgresql" else "?"
         cursor.execute(f"""
-            INSERT INTO calls (id, filename, user_email, rep_name, file_path, status)
-            VALUES ({param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style})
-        """, (call_id, filename, user_email, rep_name, file_path, "pending"))
+            INSERT INTO calls (id, filename, user_email, rep_name, file_path, call_type, status)
+            VALUES ({param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style})
+        """, (call_id, filename, user_email, rep_name, file_path, call_type, "pending"))
 
         conn.commit()
         conn.close()
@@ -329,6 +341,7 @@ class DatabaseService:
         user_email: Optional[str] = None,
         rep_name: Optional[str] = None,
         status: Optional[str] = None,
+        call_type: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
         order_by: str = "created_at DESC",
@@ -340,6 +353,7 @@ class DatabaseService:
             user_email: Filter by user email
             rep_name: Filter by rep name
             status: Filter by status
+            call_type: Filter by call type ("real" or "ai_agent")
             limit: Maximum number of results
             offset: Offset for pagination
             order_by: Order by clause
@@ -370,6 +384,10 @@ class DatabaseService:
         if status:
             where_clauses.append(f"status = {param_style}")
             params.append(status)
+        
+        if call_type:
+            where_clauses.append(f"call_type = {param_style}")
+            params.append(call_type)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -392,6 +410,7 @@ class DatabaseService:
         user_email: Optional[str] = None,
         rep_name: Optional[str] = None,
         status: Optional[str] = None,
+        call_type: Optional[str] = None,
     ) -> int:
         """
         Count calls matching filters.
@@ -400,6 +419,7 @@ class DatabaseService:
             user_email: Filter by user email
             rep_name: Filter by rep name
             status: Filter by status
+            call_type: Filter by call type ("real" or "ai_agent")
 
         Returns:
             Count of matching calls
@@ -423,6 +443,10 @@ class DatabaseService:
         if status:
             where_clauses.append(f"status = {param_style}")
             params.append(status)
+        
+        if call_type:
+            where_clauses.append(f"call_type = {param_style}")
+            params.append(call_type)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 

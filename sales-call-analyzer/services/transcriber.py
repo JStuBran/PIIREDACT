@@ -160,16 +160,49 @@ class TranscriberService:
     def transcribe_only(self, audio_path: str) -> Dict[str, Any]:
         """
         Transcribe audio without PII redaction.
+        
+        Returns format compatible with transcribe_and_redact() for seamless integration.
 
         Args:
             audio_path: Path to audio file
 
         Returns:
-            Dict with text and segments
+            Dict with:
+                - original_text: Full transcript (no redaction)
+                - redacted_text: Same as original_text (no redaction needed)
+                - pii_findings: Empty list (no PII detected/redacted)
+                - segments: Timestamped segments from Whisper
+                - duration_sec: Duration in seconds
+                - duration_min: Duration in minutes
         """
+        logger.info(f"Transcribing (no redaction): {audio_path}")
+        
+        # Transcribe with word timestamps
         result = self.redactor.transcribe(audio_path, word_timestamps=True)
+        
+        # Get segments and calculate duration
+        segments = result.get("segments", [])
+        duration_sec = 0
+        if segments:
+            last_segment = segments[-1]
+            duration_sec = last_segment.get("end", 0)
+        
+        # Get full text
+        original_text = result.get("text", "")
+        
+        # Parse segments into same format as transcribe_and_redact()
+        parsed_segments = self._parse_segments(
+            segments,
+            original_text=original_text,
+            redacted_text=original_text,  # No redaction, so same as original
+        )
+        
         return {
-            "text": result.get("text", ""),
-            "segments": result.get("segments", []),
+            "original_text": original_text,
+            "redacted_text": original_text,  # No redaction needed for AI agent calls
+            "pii_findings": [],  # No PII to detect/redact
+            "segments": parsed_segments,
+            "duration_sec": duration_sec,
+            "duration_min": round(duration_sec / 60, 1),
         }
 

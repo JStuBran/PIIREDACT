@@ -7,7 +7,23 @@
     <div class="transcript-header">
         <div>
             <h1>Call Transcript</h1>
-            <p class="subtitle">{{ job.filename }}</p>
+            <p class="subtitle">
+                {{ job.filename }}
+                {% if job.call_type == 'ai_agent' %}
+                    <span class="call-type-badge call-type-ai" style="margin-left: 12px;">🤖 AI Agent Call</span>
+                {% else %}
+                    <span class="call-type-badge call-type-real" style="margin-left: 12px;">👤 Real Call</span>
+                {% endif %}
+            </p>
+            {% if job.call_type == 'ai_agent' %}
+            <p class="privacy-note" style="margin-top: 8px; font-size: 13px; color: var(--text-muted);">
+                <strong>Note:</strong> This is an AI agent call. No PII redaction was performed.
+            </p>
+            {% else %}
+            <p class="privacy-note" style="margin-top: 8px; font-size: 13px; color: var(--text-muted);">
+                <strong>Privacy:</strong> PII has been redacted from this transcript.
+            </p>
+            {% endif %}
         </div>
         <div class="transcript-actions">
             <a href="{{ url_for('report', job_id=job.id) }}" class="btn btn-outline">View Report</a>
@@ -976,6 +992,37 @@ document.addEventListener('keydown', function(e) {
     padding: 20px;
     overflow-y: auto;
     height: calc(100vh - 60px);
+}
+
+/* Call Type Badges */
+.call-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.call-type-real {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    color: #1976d2;
+    border: 1px solid #90caf9;
+}
+
+.call-type-ai {
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    color: #7b1fa2;
+    border: 1px solid #ce93d8;
+}
+
+.privacy-note {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 8px;
 }
 </style>
 {% endblock %}

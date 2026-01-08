@@ -7,8 +7,21 @@
     <div class="upload-card">
         <div class="upload-header">
             <h1>Upload Sales Call</h1>
-            <p class="subtitle">Drop an audio file to analyze. We'll redact PII and generate a coaching report.</p>
+            <p class="subtitle" id="subtitle">Drop an audio file to analyze. We'll redact PII and generate a coaching report.</p>
         </div>
+
+        <!-- Call Type Tabs -->
+        <div class="call-type-tabs">
+            <button type="button" class="tab-btn active" data-call-type="real" id="tab-real">
+                <span class="tab-icon">👤</span>
+                <span class="tab-label">Real Calls</span>
+            </button>
+            <button type="button" class="tab-btn" data-call-type="ai_agent" id="tab-ai">
+                <span class="tab-icon">🤖</span>
+                <span class="tab-label">AI Agent Calls</span>
+            </button>
+        </div>
+        <input type="hidden" name="call_type" id="call_type" value="real">
 
         <form method="POST" enctype="multipart/form-data" id="upload-form">
             <div class="dropzone" id="dropzone">
@@ -55,14 +68,14 @@
             </button>
         </form>
 
-        <div class="upload-info">
+        <div class="upload-info" id="upload-info">
             <h3>What happens next?</h3>
-            <ol>
+            <ol id="process-steps">
                 <li>🔒 <strong>PII Redaction</strong> - Names, numbers, and sensitive info are automatically redacted</li>
                 <li>🤖 <strong>AI Analysis</strong> - GPT-4o reviews the call and generates coaching feedback</li>
                 <li>📄 <strong>Reports</strong> - You'll receive a coaching report and call stats via email</li>
             </ol>
-            <p class="privacy-note">
+            <p class="privacy-note" id="privacy-note">
                 <strong>Privacy:</strong> Your audio never leaves our servers unredacted. 
                 Only the anonymized transcript is sent to OpenAI for analysis.
             </p>
@@ -144,6 +157,50 @@ clearBtn.addEventListener('click', () => {
 document.getElementById('upload-form').addEventListener('submit', () => {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span> Uploading...';
+});
+
+// Tab switching
+const tabButtons = document.querySelectorAll('.tab-btn');
+const callTypeInput = document.getElementById('call_type');
+const subtitle = document.getElementById('subtitle');
+const processSteps = document.getElementById('process-steps');
+const privacyNote = document.getElementById('privacy-note');
+
+tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+        // Update active tab
+        tabButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        // Update call type
+        const callType = btn.dataset.callType;
+        callTypeInput.value = callType;
+        
+        // Update UI based on call type
+        if (callType === 'ai_agent') {
+            subtitle.textContent = 'Drop an audio file to analyze. We\'ll analyze the call and generate a coaching report (no PII redaction needed).';
+            processSteps.innerHTML = `
+                <li>🎙️ <strong>Transcription</strong> - Audio is transcribed to text</li>
+                <li>🤖 <strong>AI Analysis</strong> - GPT-4o reviews the call and generates coaching feedback</li>
+                <li>📄 <strong>Reports</strong> - You'll receive a coaching report and call stats via email</li>
+            `;
+            privacyNote.innerHTML = `
+                <strong>Note:</strong> AI agent calls don't require PII redaction since they don't contain real customer data. 
+                The full transcript is analyzed for coaching insights.
+            `;
+        } else {
+            subtitle.textContent = 'Drop an audio file to analyze. We\'ll redact PII and generate a coaching report.';
+            processSteps.innerHTML = `
+                <li>🔒 <strong>PII Redaction</strong> - Names, numbers, and sensitive info are automatically redacted</li>
+                <li>🤖 <strong>AI Analysis</strong> - GPT-4o reviews the call and generates coaching feedback</li>
+                <li>📄 <strong>Reports</strong> - You'll receive a coaching report and call stats via email</li>
+            `;
+            privacyNote.innerHTML = `
+                <strong>Privacy:</strong> Your audio never leaves our servers unredacted. 
+                Only the anonymized transcript is sent to OpenAI for analysis.
+            `;
+        }
+    });
 });
 </script>
 {% endblock %}
