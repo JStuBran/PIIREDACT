@@ -2,6 +2,7 @@
 
 import logging
 import os
+import tempfile
 import threading
 from typing import Any, Dict
 
@@ -87,7 +88,6 @@ class BackgroundProcessor:
             db.update_call(job_id, status="transcribing")
 
             # Read encrypted file and decrypt for transcription
-            import tempfile
             temp_file_path = None
             
             try:
@@ -199,7 +199,6 @@ class BackgroundProcessor:
             logger.info(f"[{job_id}] Generating PDFs...")
             db.update_call(job_id, status="generating_pdf")
 
-            import os
             coaching_pdf_path = os.path.join(config.UPLOAD_FOLDER, f"{job_id}_coaching.pdf")
             stats_pdf_path = os.path.join(config.UPLOAD_FOLDER, f"{job_id}_stats.pdf")
 
