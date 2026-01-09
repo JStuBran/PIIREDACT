@@ -52,16 +52,30 @@ class AudioRedactor:
         """
         logger.debug(f"Transcribing audio file: {audio_path}")
         # Optimize transcription settings for speed
-        result = self.whisper_model.transcribe(
-            audio_path,
-            word_timestamps=word_timestamps,
-            fp16=False,  # CPU doesn't support FP16
-            verbose=False,  # Reduce logging overhead
-            # Use faster decoding (greedy instead of beam search for speed)
-            beam_size=1 if not word_timestamps else 5,  # Smaller beam = faster
-        )
-        logger.debug(f"Transcription complete. Length: {len(result.get('text', ''))}")
-        return result
+        try:
+            result = self.whisper_model.transcribe(
+                audio_path,
+                word_timestamps=word_timestamps,
+                fp16=False,  # CPU doesn't support FP16
+                verbose=False,  # Reduce logging overhead
+                # Use faster decoding (greedy instead of beam search for speed)
+                beam_size=1 if not word_timestamps else 5,  # Smaller beam = faster
+            )
+            logger.debug(f"Transcription complete. Length: {len(result.get('text', ''))}")
+            return result
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "header missing" in error_msg or "could not find codec parameters" in error_msg:
+                raise ValueError("Audio file is corrupted or has an invalid format. Please check the file and try uploading again.")
+            elif "invalid data found" in error_msg or "decode error" in error_msg:
+                raise ValueError("Audio file contains corrupted data and cannot be processed.")
+            elif "no such file" in error_msg or "not found" in error_msg:
+                raise ValueError("Audio file not found or cannot be accessed.")
+            elif "permission denied" in error_msg:
+                raise ValueError("Cannot access audio file due to permission issues.")
+            else:
+                logger.error(f"Whisper transcription failed: {e}")
+                raise ValueError(f"Failed to process audio file: {error_msg}")
 
     def analyze(
         self,

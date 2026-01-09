@@ -256,6 +256,94 @@ def allowed_file(filename: str) -> bool:
            filename.rsplit(".", 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
 
+def validate_audio_file(file_content: bytes) -> tuple[bool, str]:
+    """
+    Validate that the file is a valid audio file.
+    
+    Returns:
+        tuple: (is_valid: bool, error_message: str)
+    """
+    import tempfile
+    import subprocess
+    
+    if len(file_content) < 100:
+        return False, "File is too small to be a valid audio file"
+    
+    # Check magic bytes for common audio formats
+    audio_signatures = [
+        b'\xff\xfb',  # MP3
+        b'\xff\xf3',  # MP3
+        b'\xff\xf2',  # MP3
+        b'RIFF',      # WAV
+        b'OggS',      # OGG
+        b'fLaC',      # FLAC
+        b'ftypM4A',   # M4A (part of)
+        b'ftypisom',  # MP4
+    ]
+    
+    # Check if file starts with any known audio signature
+    has_valid_signature = False
+    for signature in audio_signatures:
+        if file_content.startswith(signature) or signature in file_content[:32]:
+            has_valid_signature = True
+            break
+    
+    if not has_valid_signature:
+        return False, "File does not appear to be a valid audio format"
+    
+    # Use ffprobe to validate the file more thoroughly
+    try:
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(file_content)
+            temp_file.flush()
+            
+            # Run ffprobe to check if it's a valid audio file
+            result = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                '-show_streams', temp_file.name
+            ], capture_output=True, text=True, timeout=10)
+            
+            # Clean up temp file
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
+            
+            if result.returncode != 0:
+                return False, "Audio file is corrupted or invalid format"
+            
+            # Parse the JSON output to check for audio streams
+            import json
+            try:
+                probe_data = json.loads(result.stdout)
+                streams = probe_data.get('streams', [])
+                
+                # Check if there's at least one audio stream
+                audio_streams = [s for s in streams if s.get('codec_type') == 'audio']
+                if not audio_streams:
+                    return False, "No audio streams found in file"
+                
+                # Check if audio stream has valid parameters
+                audio_stream = audio_streams[0]
+                if audio_stream.get('channels', 0) == 0:
+                    return False, "Audio file has no valid channels"
+                
+                return True, ""
+                
+            except json.JSONDecodeError:
+                return False, "Could not analyze audio file format"
+                
+    except subprocess.TimeoutExpired:
+        return False, "Audio file validation timed out (file may be corrupted)"
+    except FileNotFoundError:
+        logger.warning("ffprobe not found - skipping detailed audio validation")
+        # If ffprobe is not available, just rely on signature check
+        return has_valid_signature, "Could not perform detailed validation" if not has_valid_signature else ""
+    except Exception as e:
+        logger.warning(f"Audio validation error: {e}")
+        return False, "Could not validate audio file"
+
+
 # ============================================================================
 # Routes
 # ============================================================================
@@ -392,6 +480,13 @@ def upload():
             try:
                 # Read file content
                 file_content = file.read()
+                
+                # Validate audio file before processing
+                is_valid, error_msg = validate_audio_file(file_content)
+                if not is_valid:
+                    safe_filename = sanitize_string(file.filename)
+                    flash(f"Invalid audio file '{safe_filename}': {error_msg}", "error")
+                    continue
                 
                 # Save file securely (encrypted, with proper permissions)
                 job_id = str(uuid.uuid4())

@@ -244,6 +244,19 @@ class BackgroundProcessor:
 
             logger.info(f"[{job_id}] Analysis complete!")
 
+        except ValueError as e:
+            # Handle known validation errors with user-friendly messages
+            logger.warning(f"[{job_id}] Validation error: {e}")
+            
+            db = services["database"]
+            # ValueError messages are already user-friendly, so use them directly
+            db.update_call(job_id, status="error", error=str(e))
+            
+            # SECURITY: Clean up file even on error
+            try:
+                secure_storage.delete_file_secure(file_path)
+            except Exception:
+                pass
         except Exception as e:
             # SECURITY: Use safe exception logging
             safe_log_exception(logger, f"[{job_id}] Analysis failed", exc_info=True)
