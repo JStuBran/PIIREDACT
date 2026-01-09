@@ -86,18 +86,29 @@ class BackgroundProcessor:
             
             db.update_call(job_id, status="transcribing")
 
-            # Read encrypted file if needed
+            # Read encrypted file and decrypt for transcription
+            import tempfile
+            temp_file_path = None
+            
             try:
-                # Try to read as encrypted file first
+                # Read and decrypt the file
                 file_content = secure_storage.read_file_secure(file_path)
-                # Write to temp file for transcription
-                import tempfile
+                logger.debug(f"[{job_id}] Decrypted file, size: {len(file_content)} bytes")
+                
+                # Write decrypted content to temp file for transcription
                 with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_path)[1]) as temp_file:
                     temp_file.write(file_content)
                     temp_file_path = temp_file.name
-            except Exception:
-                # Fallback to direct file path (for unencrypted files)
-                temp_file_path = file_path
+                    
+                logger.debug(f"[{job_id}] Created temp file for transcription: {temp_file_path}")
+                
+            except FileNotFoundError:
+                logger.error(f"[{job_id}] Audio file not found: {file_path}")
+                raise ValueError("Audio file not found. Please try uploading again.")
+            except Exception as e:
+                # Log the decryption error - don't silently fall back to encrypted file
+                logger.error(f"[{job_id}] Failed to decrypt audio file: {e}")
+                raise ValueError("Failed to process audio file. The file may be corrupted or there was a server error. Please try uploading again.")
 
             # Conditionally transcribe based on call type
             if call_type == "ai_agent":
