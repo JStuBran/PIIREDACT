@@ -271,14 +271,21 @@ def validate_audio_file(file_content: bytes) -> tuple[bool, str]:
     
     # Check magic bytes for common audio formats
     audio_signatures = [
-        b'\xff\xfb',  # MP3
-        b'\xff\xf3',  # MP3
-        b'\xff\xf2',  # MP3
+        b'ID3',       # MP3 with ID3v2 tag (very common)
+        b'\xff\xfb',  # MP3 frame sync (MPEG1 Layer 3)
+        b'\xff\xf3',  # MP3 frame sync (MPEG2 Layer 3)
+        b'\xff\xf2',  # MP3 frame sync (MPEG2.5 Layer 3)
+        b'\xff\xfa',  # MP3 frame sync (MPEG1 Layer 3, no CRC)
+        b'\xff\xe3',  # MP3 frame sync variant
+        b'\xff\xe2',  # MP3 frame sync variant
         b'RIFF',      # WAV
-        b'OggS',      # OGG
+        b'OggS',      # OGG/Vorbis/Opus
         b'fLaC',      # FLAC
-        b'ftypM4A',   # M4A (part of)
-        b'ftypisom',  # MP4
+        b'ftypM4A',   # M4A
+        b'ftypisom',  # MP4/M4A
+        b'ftypmp4',   # MP4
+        b'ftypMSNV',  # MP4 variant
+        b'\x00\x00\x00',  # Some MP4/M4A files (ftyp box)
     ]
     
     # Check if file starts with any known audio signature
