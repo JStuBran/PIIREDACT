@@ -35,8 +35,8 @@ class ComparisonService:
             
             call_data.append({
                 "id": call["id"],
-                "filename": call["filename"],
-                "rep_name": call.get("rep_name"),
+                "filename": call.get("agent_name") or call["id"],  # Use agent_name as identifier
+                "agent_name": call.get("agent_name"),
                 "created_at": call.get("created_at"),
                 "stats": stats,
                 "analysis": analysis,

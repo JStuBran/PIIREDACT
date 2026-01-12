@@ -5,7 +5,6 @@ import uuid
 import logging
 from datetime import datetime, timedelta
 from functools import wraps
-from pathlib import Path
 from typing import Optional
 
 from flask import (
@@ -21,13 +20,10 @@ from flask import (
     Response,
 )
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from werkzeug.utils import secure_filename
 from collections import defaultdict
 import time
 
 from config import Config
-
-# API v1 and webhooks removed - no longer offering developer features
 
 # Simple in-memory rate limiter (use Redis in production)
 _rate_limit_store = defaultdict(list)
@@ -46,12 +42,12 @@ def check_rate_limit(key: str) -> bool:
     
     _rate_limit_store[key].append(now)
     return True
+
+
 from services import (
-    SecureStorageService,
     get_secure_logger,
     sanitize_string,
     safe_log_exception,
-    TranscriberService,
     AnalyzerService,
     PDFGeneratorService,
     EmailSenderService,
@@ -65,6 +61,7 @@ from services import (
     ConversationIntelligenceService,
     KeywordTrackingService,
     PlaylistService,
+    ElevenLabsWebhookService,
 )
 
 # Configure logging
@@ -91,17 +88,11 @@ def add_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
-# Ensure upload folder exists
-os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
-
-# Register API blueprint
-# API v1 blueprint registration removed
 
 # Token serializer for magic links
 serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
 
 # Initialize services (lazy loading)
-_transcriber: Optional[TranscriberService] = None
 _analyzer: Optional[AnalyzerService] = None
 _pdf_generator: Optional[PDFGeneratorService] = None
 _email_sender: Optional[EmailSenderService] = None
@@ -115,14 +106,7 @@ _scoring: Optional[ScoringService] = None
 _conversation_intel: Optional[ConversationIntelligenceService] = None
 _keyword_tracking: Optional[KeywordTrackingService] = None
 _playlists: Optional[PlaylistService] = None
-
-
-def get_transcriber() -> TranscriberService:
-    """Get or create transcriber service."""
-    global _transcriber
-    if _transcriber is None:
-        _transcriber = TranscriberService(whisper_model=Config.WHISPER_MODEL)
-    return _transcriber
+_elevenlabs_webhook: Optional[ElevenLabsWebhookService] = None
 
 
 def get_analyzer() -> AnalyzerService:
@@ -156,8 +140,6 @@ def get_database() -> DatabaseService:
     """Get or create database service."""
     global _database
     if _database is None:
-        # DatabaseService auto-detects DATABASE_URL (for PostgreSQL) or falls back to SQLite
-        # Pass db_path only as fallback for SQLite (DatabaseService checks DATABASE_URL first)
         _database = DatabaseService(db_path=Config.DATABASE_PATH)
     return _database
 
@@ -182,8 +164,6 @@ def get_annotations() -> AnnotationsService:
     """Get or create annotations service."""
     global _annotations
     if _annotations is None:
-        # AnnotationsService auto-detects DATABASE_URL (for PostgreSQL) or falls back to SQLite
-        # Pass db_path only as fallback for SQLite (AnnotationsService checks DATABASE_URL first)
         _annotations = AnnotationsService(db_path=Config.DATABASE_PATH)
     return _annotations
 
@@ -239,6 +219,16 @@ def get_playlists() -> PlaylistService:
     return _playlists
 
 
+def get_elevenlabs_webhook() -> ElevenLabsWebhookService:
+    """Get or create ElevenLabs webhook service."""
+    global _elevenlabs_webhook
+    if _elevenlabs_webhook is None:
+        _elevenlabs_webhook = ElevenLabsWebhookService(
+            webhook_secret=Config.ELEVENLABS_WEBHOOK_SECRET,
+        )
+    return _elevenlabs_webhook
+
+
 def login_required(f):
     """Decorator to require authentication."""
     @wraps(f)
@@ -248,107 +238,6 @@ def login_required(f):
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated_function
-
-
-def allowed_file(filename: str) -> bool:
-    """Check if file extension is allowed."""
-    return "." in filename and \
-           filename.rsplit(".", 1)[1].lower() in Config.ALLOWED_EXTENSIONS
-
-
-def validate_audio_file(file_content: bytes) -> tuple[bool, str]:
-    """
-    Validate that the file is a valid audio file.
-    
-    Returns:
-        tuple: (is_valid: bool, error_message: str)
-    """
-    import tempfile
-    import subprocess
-    
-    if len(file_content) < 100:
-        return False, "File is too small to be a valid audio file"
-    
-    # Check magic bytes for common audio formats
-    audio_signatures = [
-        b'ID3',       # MP3 with ID3v2 tag (very common)
-        b'\xff\xfb',  # MP3 frame sync (MPEG1 Layer 3)
-        b'\xff\xf3',  # MP3 frame sync (MPEG2 Layer 3)
-        b'\xff\xf2',  # MP3 frame sync (MPEG2.5 Layer 3)
-        b'\xff\xfa',  # MP3 frame sync (MPEG1 Layer 3, no CRC)
-        b'\xff\xe3',  # MP3 frame sync variant
-        b'\xff\xe2',  # MP3 frame sync variant
-        b'RIFF',      # WAV
-        b'OggS',      # OGG/Vorbis/Opus
-        b'fLaC',      # FLAC
-        b'ftypM4A',   # M4A
-        b'ftypisom',  # MP4/M4A
-        b'ftypmp4',   # MP4
-        b'ftypMSNV',  # MP4 variant
-        b'\x00\x00\x00',  # Some MP4/M4A files (ftyp box)
-    ]
-    
-    # Check if file starts with any known audio signature
-    has_valid_signature = False
-    for signature in audio_signatures:
-        if file_content.startswith(signature) or signature in file_content[:32]:
-            has_valid_signature = True
-            break
-    
-    if not has_valid_signature:
-        return False, "File does not appear to be a valid audio format"
-    
-    # Use ffprobe to validate the file more thoroughly
-    try:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(file_content)
-            temp_file.flush()
-            
-            # Run ffprobe to check if it's a valid audio file
-            result = subprocess.run([
-                'ffprobe', '-v', 'quiet', '-print_format', 'json',
-                '-show_streams', temp_file.name
-            ], capture_output=True, text=True, timeout=10)
-            
-            # Clean up temp file
-            try:
-                os.unlink(temp_file.name)
-            except:
-                pass
-            
-            if result.returncode != 0:
-                return False, "Audio file is corrupted or invalid format"
-            
-            # Parse the JSON output to check for audio streams
-            import json
-            try:
-                probe_data = json.loads(result.stdout)
-                streams = probe_data.get('streams', [])
-                
-                # Check if there's at least one audio stream
-                audio_streams = [s for s in streams if s.get('codec_type') == 'audio']
-                if not audio_streams:
-                    return False, "No audio streams found in file"
-                
-                # Check if audio stream has valid parameters
-                audio_stream = audio_streams[0]
-                if audio_stream.get('channels', 0) == 0:
-                    return False, "Audio file has no valid channels"
-                
-                return True, ""
-                
-            except json.JSONDecodeError:
-                return False, "Could not analyze audio file format"
-                
-    except subprocess.TimeoutExpired:
-        return False, "Audio file validation timed out (file may be corrupted)"
-    except FileNotFoundError:
-        logger.warning("ffprobe not found - skipping detailed audio validation")
-        # If ffprobe is not available, just rely on signature check
-        return has_valid_signature, "Could not perform detailed validation" if not has_valid_signature else ""
-    except Exception as e:
-        logger.warning(f"Audio validation error: {e}")
-        return False, "Could not validate audio file"
 
 
 # ============================================================================
@@ -425,7 +314,7 @@ def auth(token):
         app.permanent_session_lifetime = timedelta(hours=24)
         
         flash(f"Welcome, {email}!", "success")
-        return redirect(url_for("upload"))
+        return redirect(url_for("dashboard"))
         
     except SignatureExpired:
         flash("This link has expired. Please request a new one.", "error")
@@ -443,163 +332,98 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.route("/pii-redaction")
-@login_required
-def pii_redaction():
-    """Page explaining how PII redaction works."""
-    return render_template("pii_redaction.html")
+# ============================================================================
+# ElevenLabs Webhook Endpoint
+# ============================================================================
 
-
-@app.route("/upload", methods=["GET", "POST"])
-@login_required
-def upload():
-    """Upload page - drag and drop audio file(s)."""
-    if request.method == "POST":
-        # Support both single file and multiple files
-        files = request.files.getlist("audio")
-        
-        if not files or all(f.filename == "" for f in files):
-            flash("No audio file provided.", "error")
-            return render_template("upload.html")
-        
-        # Get optional rep name and call type from form
-        rep_name = request.form.get("rep_name", "").strip() or None
-        call_type = request.form.get("call_type", "real").strip()
-        
-        # Validate call_type
-        if call_type not in ["real", "ai_agent"]:
-            call_type = "real"
-        
-        # Validate and save files
-        db = get_database()
-        secure_storage = SecureStorageService()
-        job_ids = []
-        
-        for file in files:
-            if file.filename == "":
-                continue
-            
-            if not allowed_file(file.filename):
-                safe_filename = sanitize_string(file.filename)
-                flash(f"Invalid file type. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}", "error")
-                continue
-            
-            try:
-                # Read file content
-                file_content = file.read()
-                
-                # Validate audio file before processing
-                is_valid, error_msg = validate_audio_file(file_content)
-                if not is_valid:
-                    safe_filename = sanitize_string(file.filename)
-                    flash(f"Invalid audio file '{safe_filename}': {error_msg}", "error")
-                    continue
-                
-                # Save file securely (encrypted, with proper permissions)
-                job_id = str(uuid.uuid4())
-                filename = secure_filename(file.filename)
-                file_path = secure_storage.save_file_secure(
-                    file_content=file_content,
-                    job_id=job_id,
-                    filename=filename,
-                )
-                
-                # Create call record in database
-                db.create_call(
-                    call_id=job_id,
-                    filename=filename,
-                    user_email=session["user_email"],
-                    file_path=file_path,
-                    rep_name=rep_name,
-                    call_type=call_type,
-                )
-                
-                job_ids.append(job_id)
-                
-            except Exception as e:
-                logger = get_secure_logger(__name__)
-                safe_log_exception(logger, f"Failed to upload file: {e}", exc_info=True)
-                flash("Failed to upload file. Please try again.", "error")
-                continue
-        
-        if not job_ids:
-            flash("No valid files uploaded.", "error")
-            return render_template("upload.html")
-        
-        # If single file, redirect to processing. If multiple, redirect to batch view
-        if len(job_ids) == 1:
-            return redirect(url_for("process", job_id=job_ids[0]))
-        else:
-            flash(f"Uploaded {len(job_ids)} files. Processing will begin shortly.", "success")
-            return redirect(url_for("history"))
+@app.route("/webhooks/elevenlabs/post-call", methods=["POST"])
+def elevenlabs_post_call_webhook():
+    """Receive and process ElevenLabs post-call webhook."""
+    webhook_service = get_elevenlabs_webhook()
     
-    return render_template("upload.html", user_email=session.get("user_email"))
-
-
-@app.route("/process/<job_id>")
-@login_required
-def process(job_id):
-    """Processing page - shows progress and triggers analysis."""
+    # Get raw payload for signature verification
+    payload_bytes = request.get_data()
+    signature = request.headers.get("X-ElevenLabs-Signature", "")
+    
+    # Verify signature
+    if not webhook_service.verify_signature(payload_bytes, signature):
+        logger.warning("Invalid webhook signature")
+        return jsonify({"error": "Invalid signature"}), 401
+    
+    # Parse JSON payload
+    try:
+        payload = request.get_json()
+    except Exception as e:
+        logger.error(f"Failed to parse webhook payload: {e}")
+        return jsonify({"error": "Invalid JSON"}), 400
+    
+    if not payload:
+        return jsonify({"error": "Empty payload"}), 400
+    
+    # Parse transcript from webhook
+    try:
+        transcript_data = webhook_service.parse_transcript(payload)
+    except Exception as e:
+        logger.error(f"Failed to parse transcript: {e}")
+        return jsonify({"error": "Failed to parse transcript"}), 400
+    
+    # Check for duplicate calls
     db = get_database()
-    job = db.get_call(job_id)
+    elevenlabs_call_id = transcript_data.get("elevenlabs_call_id")
+    if elevenlabs_call_id:
+        existing_call = db.get_call_by_elevenlabs_id(elevenlabs_call_id)
+        if existing_call:
+            logger.info(f"Duplicate webhook for call {elevenlabs_call_id}, skipping")
+            return jsonify({
+                "status": "duplicate",
+                "call_id": existing_call["id"],
+                "message": "Call already processed",
+            }), 200
     
-    if not job:
-        flash("Job not found.", "error")
-        return redirect(url_for("upload"))
+    # Create call record
+    job_id = str(uuid.uuid4())
     
-    # Verify ownership
-    if job["user_email"] != session["user_email"]:
-        flash("Access denied.", "error")
-        return redirect(url_for("upload"))
+    # Get user email - for webhooks, we need a default user or extract from payload
+    # In production, you might want to map agents to users
+    user_email = payload.get("user_email") or os.environ.get("DEFAULT_USER_EMAIL", "webhook@system.local")
     
-    return render_template("processing.html", job=job)
-
-
-@app.route("/api/analyze/<job_id>", methods=["POST"])
-@login_required
-def api_analyze(job_id):
-    """API endpoint to start analysis (called from processing page)."""
-    db = get_database()
-    job = db.get_call(job_id)
-    
-    if not job:
-        return jsonify({"error": "Job not found"}), 404
-    
-    if job["user_email"] != session["user_email"]:
-        return jsonify({"error": "Access denied"}), 403
-    
-    if job["status"] != "pending":
-        return jsonify({"error": "Job already processing or complete"}), 400
+    db.create_call(
+        call_id=job_id,
+        user_email=user_email,
+        agent_id=transcript_data.get("agent_id"),
+        agent_name=transcript_data.get("agent_name"),
+        elevenlabs_call_id=elevenlabs_call_id,
+        caller_id=transcript_data.get("caller_id"),
+        transcription_json=transcript_data,
+    )
     
     # Check if Celery is enabled
     if Config.USE_CELERY:
         # Use Celery for distributed processing
-        from tasks import process_call_task
+        from tasks import process_webhook_call_task
         
-        task = process_call_task.delay(
+        task = process_webhook_call_task.delay(
             job_id=job_id,
-            file_path=job["file_path"],
-            filename=job["filename"],
-            user_email=job["user_email"],
+            transcription=transcript_data,
+            user_email=user_email,
         )
         
-        # Store task ID for status tracking
         db.update_call(job_id, status="queued")
         
         return jsonify({
             "status": "queued",
+            "call_id": job_id,
             "task_id": task.id,
-            "message": "Job queued for processing.",
-        })
+            "message": "Call queued for processing",
+        }), 202
     
     else:
-        # Use in-process background threading (default)
+        # Use in-process background threading
         from services.background_processor import BackgroundProcessor
         
         processor = BackgroundProcessor()
         services = {
             "database": db,
-            "transcriber": get_transcriber(),
             "analyzer": get_analyzer(),
             "analytics": get_analytics(),
             "pdf_generator": get_pdf_generator(),
@@ -607,45 +431,47 @@ def api_analyze(job_id):
             "scoring": get_scoring(),
             "conversation_intel": get_conversation_intel(),
             "keyword_tracking": get_keyword_tracking(),
-            "user_email": job["user_email"],
         }
         
         processor.process_call_async(
             job_id=job_id,
-            file_path=job["file_path"],
-            filename=job["filename"],
-            user_email=job["user_email"],
+            transcription=transcript_data,
+            user_email=user_email,
             services=services,
             config=Config,
         )
         
-        # Return immediately - processing happens in background
         return jsonify({
             "status": "processing",
-            "message": "Analysis started. This page will update automatically.",
-        })
+            "call_id": job_id,
+            "message": "Call processing started",
+        }), 202
 
 
-@app.route("/api/status/<job_id>")
+@app.route("/webhook-status")
 @login_required
-def api_status(job_id):
-    """API endpoint to check job status."""
+def webhook_status():
+    """Show webhook configuration and status."""
+    webhook_url = f"{Config.APP_URL}/webhooks/elevenlabs/post-call"
+    
     db = get_database()
-    job = db.get_call(job_id)
+    # Get recent calls to show webhook activity
+    recent_calls = db.list_calls(
+        user_email=session["user_email"],
+        limit=10,
+        order_by="created_at DESC",
+    )
     
-    if not job:
-        logger.warning(f"Job not found: {job_id} (user: {session.get('user_email')})")
-        return jsonify({"error": "Job not found. This job may have been from a previous session or deployment."}), 404
-    
-    if job["user_email"] != session["user_email"]:
-        return jsonify({"error": "Access denied"}), 403
-    
-    return jsonify({
-        "id": job["id"],
-        "status": job["status"],
-        "error": job.get("error"),
-    })
+    return render_template(
+        "webhook_status.html",
+        webhook_url=webhook_url,
+        recent_calls=recent_calls,
+    )
 
+
+# ============================================================================
+# Dashboard and Reports
+# ============================================================================
 
 @app.route("/report/<job_id>")
 @login_required
@@ -656,14 +482,15 @@ def report(job_id):
     
     if not job:
         flash("Job not found.", "error")
-        return redirect(url_for("upload"))
+        return redirect(url_for("dashboard"))
     
     if job["user_email"] != session["user_email"]:
         flash("Access denied.", "error")
-        return redirect(url_for("upload"))
+        return redirect(url_for("dashboard"))
     
     if job["status"] != "complete":
-        return redirect(url_for("process", job_id=job_id))
+        flash("Report not ready yet.", "warning")
+        return redirect(url_for("dashboard"))
     
     # Calculate benchmarks and percentile rankings
     benchmark_service = get_benchmark()
@@ -716,18 +543,20 @@ def download(job_id, report_type):
     
     if not job:
         flash("Job not found.", "error")
-        return redirect(url_for("upload"))
+        return redirect(url_for("dashboard"))
     
     if job["user_email"] != session["user_email"]:
         flash("Access denied.", "error")
-        return redirect(url_for("upload"))
+        return redirect(url_for("dashboard"))
+    
+    agent_name = job.get("agent_name", "call")
     
     if report_type == "coaching":
         pdf_path = job.get("coaching_pdf_path")
-        filename = f"coaching_report_{job['filename']}.pdf"
+        filename = f"coaching_report_{agent_name}.pdf"
     elif report_type == "stats":
         pdf_path = job.get("stats_pdf_path")
-        filename = f"call_stats_{job['filename']}.pdf"
+        filename = f"call_stats_{agent_name}.pdf"
     else:
         flash("Invalid report type.", "error")
         return redirect(url_for("report", job_id=job_id))
@@ -760,8 +589,8 @@ def dashboard():
     # Get summary stats
     stats = db.get_summary_stats(user_email=session["user_email"])
     
-    # Get list of reps
-    reps = db.get_reps(user_email=session["user_email"])
+    # Get list of agents
+    agents = db.get_agents(user_email=session["user_email"])
     
     # Calculate team benchmarks
     benchmark_service = get_benchmark()
@@ -781,7 +610,7 @@ def dashboard():
         "dashboard.html",
         recent_calls=recent_calls,
         stats=stats,
-        reps=reps,
+        agents=agents,
         benchmarks=benchmarks,
         leaderboard=leaderboard,
         score_trends=score_trends,
@@ -797,19 +626,16 @@ def history():
     # Get filters from query params
     page = int(request.args.get("page", 1))
     per_page = 20
-    rep_filter = request.args.get("rep", "")
+    agent_filter = request.args.get("agent", "")
     status_filter = request.args.get("status", "")
-    call_type_filter = request.args.get("call_type", "")
     search_query = request.args.get("search", "").strip()
     
     # Build filters
     filters = {"user_email": session["user_email"]}
-    if rep_filter:
-        filters["rep_name"] = rep_filter
+    if agent_filter:
+        filters["agent_id"] = agent_filter
     if status_filter:
         filters["status"] = status_filter
-    if call_type_filter:
-        filters["call_type"] = call_type_filter
     
     # Get calls
     offset = (page - 1) * per_page
@@ -829,12 +655,10 @@ def history():
             offset=offset,
         )
         # Re-apply other filters
-        if rep_filter:
-            calls = [c for c in calls if c.get("rep_name") == rep_filter]
+        if agent_filter:
+            calls = [c for c in calls if c.get("agent_id") == agent_filter]
         if status_filter:
             calls = [c for c in calls if c.get("status") == status_filter]
-        if call_type_filter:
-            calls = [c for c in calls if c.get("call_type") == call_type_filter]
     
     # Get total count
     total_count = db.count_calls(**filters)
@@ -843,8 +667,8 @@ def history():
     
     total_pages = (total_count + per_page - 1) // per_page
     
-    # Get reps for filter dropdown
-    reps = db.get_reps(user_email=session["user_email"])
+    # Get agents for filter dropdown
+    agents = db.get_agents(user_email=session["user_email"])
     
     return render_template(
         "history.html",
@@ -852,11 +676,10 @@ def history():
         page=page,
         total_pages=total_pages,
         per_page=per_page,
-        rep_filter=rep_filter,
+        agent_filter=agent_filter,
         status_filter=status_filter,
-        call_type_filter=call_type_filter,
         search_query=search_query,
-        reps=reps,
+        agents=agents,
     )
 
 
@@ -877,7 +700,7 @@ def transcript(job_id):
     
     if job["status"] != "complete":
         flash("Transcript not available yet.", "warning")
-        return redirect(url_for("process", job_id=job_id))
+        return redirect(url_for("dashboard"))
     
     transcription = job.get("transcription_json", {})
     analysis = job.get("analysis_json", {})
@@ -894,8 +717,7 @@ def transcript(job_id):
         job=job,
         transcription=transcription,
         segments=transcription.get("segments", []),
-        redacted_text=transcription.get("redacted_text", ""),
-        pii_findings=transcription.get("pii_findings", []),
+        full_text=transcription.get("text", ""),
         timestamp_highlights=timestamp_highlights,
     )
 
@@ -917,25 +739,26 @@ def export_transcript(job_id):
     if not transcription:
         return jsonify({"error": "Transcript not found"}), 404
     
-    redacted_text = transcription.get("redacted_text", "")
+    full_text = transcription.get("text", "")
     export_type = request.args.get("type", "text")  # text or pdf
+    
+    agent_name = job.get("agent_name", "call")
     
     if export_type == "text":
         response = Response(
-            redacted_text,
+            full_text,
             mimetype="text/plain",
             headers={
-                "Content-Disposition": f"attachment; filename=transcript_{job['filename']}.txt"
+                "Content-Disposition": f"attachment; filename=transcript_{agent_name}.txt"
             }
         )
         return response
     elif export_type == "pdf":
         # Use PDF generator to create transcript PDF
         pdf_generator = get_pdf_generator()
-        pdf_path = os.path.join(
-            Config.UPLOAD_FOLDER,
-            f"{job_id}_transcript.pdf"
-        )
+        output_dir = os.environ.get("OUTPUT_DIR", "/tmp/sales-call-analyzer")
+        os.makedirs(output_dir, exist_ok=True)
+        pdf_path = os.path.join(output_dir, f"{job_id}_transcript.pdf")
         
         # Generate transcript PDF
         pdf_generator.generate_transcript_pdf(
@@ -947,39 +770,39 @@ def export_transcript(job_id):
         return send_file(
             pdf_path,
             as_attachment=True,
-            download_name=f"transcript_{job['filename']}.pdf",
+            download_name=f"transcript_{agent_name}.pdf",
             mimetype="application/pdf",
         )
     
     return jsonify({"error": "Invalid export type"}), 400
 
 
-@app.route("/team")
+@app.route("/agents")
 @login_required
-def team():
-    """Team dashboard showing all reps and their performance."""
+def agents():
+    """Agents dashboard showing all AI agents and their performance."""
     db = get_database()
     
-    # Get all reps for this user
-    reps = db.get_reps(user_email=session["user_email"])
+    # Get all agents for this user
+    agents_list = db.get_agents(user_email=session["user_email"])
     
-    if not reps:
-        flash("No reps found. Assign rep names when uploading calls.", "info")
-        return redirect(url_for("upload"))
+    if not agents_list:
+        flash("No agents found. Calls will appear here once ElevenLabs webhooks are received.", "info")
+        return render_template("agents.html", agent_stats=[])
     
-    # Get stats for each rep
-    rep_stats = []
-    for rep in reps:
+    # Get stats for each agent
+    agent_stats = []
+    for agent in agents_list:
         calls = db.list_calls(
             user_email=session["user_email"],
-            rep_name=rep,
+            agent_id=agent["agent_id"],
             status="complete",
         )
         
         if not calls:
             continue
         
-        # Calculate rep metrics
+        # Calculate agent metrics
         total_calls = len(calls)
         total_duration = 0
         total_questions = 0
@@ -993,12 +816,13 @@ def team():
                 total_questions += stats.get("questions", {}).get("agent_total", 0)
                 total_filler += stats.get("filler", {}).get("agent_count", 0)
                 
-                agent_label = stats.get("agent_label", "spk_0")
+                agent_label = stats.get("agent_label", "agent")
                 talk_share = stats.get("talk_share_pct", {}).get(agent_label, 0)
                 avg_talk_ratio += talk_share
         
-        rep_stats.append({
-            "name": rep,
+        agent_stats.append({
+            "agent_id": agent["agent_id"],
+            "agent_name": agent["agent_name"],
             "total_calls": total_calls,
             "avg_duration": round(total_duration / total_calls, 1) if total_calls else 0,
             "avg_questions": round(total_questions / total_calls, 1) if total_calls else 0,
@@ -1008,9 +832,9 @@ def team():
         })
     
     # Sort by total calls
-    rep_stats.sort(key=lambda x: x["total_calls"], reverse=True)
+    agent_stats.sort(key=lambda x: x["total_calls"], reverse=True)
     
-    return render_template("team.html", rep_stats=rep_stats)
+    return render_template("agents.html", agent_stats=agent_stats)
 
 
 @app.route("/compare")
@@ -1166,12 +990,12 @@ def export_calls(export_type):
     db = get_database()
     
     # Get filters
-    rep_filter = request.args.get("rep", "")
+    agent_filter = request.args.get("agent", "")
     status_filter = request.args.get("status", "complete")
     
     filters = {"user_email": session["user_email"], "status": status_filter}
-    if rep_filter:
-        filters["rep_name"] = rep_filter
+    if agent_filter:
+        filters["agent_id"] = agent_filter
     
     # Get all matching calls
     calls = db.list_calls(limit=1000, **filters)
@@ -1181,9 +1005,11 @@ def export_calls(export_type):
         return redirect(url_for("history"))
     
     exporter = get_exporter()
+    output_dir = os.environ.get("OUTPUT_DIR", "/tmp/sales-call-analyzer")
+    os.makedirs(output_dir, exist_ok=True)
     
     if export_type == "csv":
-        output_path = os.path.join(Config.UPLOAD_FOLDER, f"export_{uuid.uuid4().hex[:8]}.csv")
+        output_path = os.path.join(output_dir, f"export_{uuid.uuid4().hex[:8]}.csv")
         exporter.export_csv(calls, output_path)
         return send_file(
             output_path,
@@ -1193,7 +1019,7 @@ def export_calls(export_type):
         )
     
     elif export_type == "json":
-        output_path = os.path.join(Config.UPLOAD_FOLDER, f"export_{uuid.uuid4().hex[:8]}.json")
+        output_path = os.path.join(output_dir, f"export_{uuid.uuid4().hex[:8]}.json")
         exporter.export_json(calls, output_path)
         return send_file(
             output_path,
@@ -1230,13 +1056,17 @@ def export_srt(job_id):
         return redirect(url_for("transcript", job_id=job_id))
     
     exporter = get_exporter()
-    output_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_transcript.srt")
+    output_dir = os.environ.get("OUTPUT_DIR", "/tmp/sales-call-analyzer")
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f"{job_id}_transcript.srt")
     exporter.export_srt(segments, output_path)
+    
+    agent_name = job.get("agent_name", "call")
     
     return send_file(
         output_path,
         as_attachment=True,
-        download_name=f"transcript_{job['filename']}.srt",
+        download_name=f"transcript_{agent_name}.srt",
         mimetype="text/srt",
     )
 
@@ -1400,7 +1230,7 @@ def api_get_score(job_id):
 @app.route("/api/leaderboard")
 @login_required
 def api_leaderboard():
-    """Get rep leaderboard."""
+    """Get agent leaderboard."""
     scoring = get_scoring()
     leaderboard = scoring.get_leaderboard(session["user_email"])
     return jsonify({"leaderboard": leaderboard})
@@ -1410,13 +1240,13 @@ def api_leaderboard():
 @login_required
 def api_score_trends():
     """Get score trends."""
-    rep_name = request.args.get("rep")
+    agent_id = request.args.get("agent")
     days = int(request.args.get("days", 30))
     
     scoring = get_scoring()
     trends = scoring.get_score_trends(
         user_email=session["user_email"],
-        rep_name=rep_name if rep_name else None,
+        rep_name=agent_id if agent_id else None,
         days=days,
     )
     return jsonify(trends)
@@ -1455,14 +1285,14 @@ def create_keyword_library():
             return render_template("keyword_library_form.html", library=None)
         
         # Parse keywords (one per line or comma-separated)
-        keywords = []
+        keywords_list = []
         for line in keywords_text.split("\n"):
             for kw in line.split(","):
                 kw = kw.strip()
                 if kw:
-                    keywords.append(kw)
+                    keywords_list.append(kw)
         
-        if not keywords:
+        if not keywords_list:
             flash("At least one keyword is required.", "error")
             return render_template("keyword_library_form.html", library=None)
         
@@ -1470,7 +1300,7 @@ def create_keyword_library():
         kw_service.create_library(
             user_email=session["user_email"],
             name=name,
-            keywords=keywords,
+            keywords=keywords_list,
             category=category,
         )
         
@@ -1501,17 +1331,17 @@ def edit_keyword_library(library_id):
         is_active = request.form.get("is_active") == "on"
         
         # Parse keywords
-        keywords = []
+        keywords_list = []
         for line in keywords_text.split("\n"):
             for kw in line.split(","):
                 kw = kw.strip()
                 if kw:
-                    keywords.append(kw)
+                    keywords_list.append(kw)
         
         kw_service.update_library(
             library_id=library_id,
             name=name,
-            keywords=keywords,
+            keywords=keywords_list,
             is_active=is_active,
         )
         
@@ -1765,40 +1595,35 @@ def health():
     return "OK"
 
 
-# API Keys and Webhooks management removed - no longer offering developer features
+@app.route("/api/status/<job_id>")
+@login_required
+def api_status(job_id):
+    """API endpoint to check job status."""
+    db = get_database()
+    job = db.get_call(job_id)
+    
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    
+    if job["user_email"] != session["user_email"]:
+        return jsonify({"error": "Access denied"}), 403
+    
+    return jsonify({
+        "id": job["id"],
+        "status": job["status"],
+        "error": job.get("error"),
+        "agent_name": job.get("agent_name"),
+    })
 
 
 # ============================================================================
 # Error handlers
 # ============================================================================
 
-@app.errorhandler(413)
-def too_large(e):
-    flash("File too large. Maximum size is 100MB.", "error")
-    return redirect(url_for("upload"))
-
-
 @app.errorhandler(500)
 def server_error(e):
-    # SECURITY: Use safe exception logging
     safe_log_exception(logger, "Server error", exc_info=True)
     return render_template("error.html", error="Internal server error"), 500
-
-
-@app.route("/admin/cleanup", methods=["POST"])
-@login_required
-def cleanup_old_files():
-    """Clean up old files from upload folder (admin only)."""
-    # SECURITY: Only allow cleanup by authenticated users
-    # In production, you might want to add admin role check
-    
-    secure_storage = SecureStorageService()
-    max_age_hours = int(request.form.get("max_age_hours", 24))
-    
-    deleted, failed = secure_storage.cleanup_old_files(max_age_hours=max_age_hours)
-    
-    flash(f"Cleanup complete: {deleted} files deleted, {failed} failed", "success")
-    return redirect(url_for("dashboard"))
 
 
 # ============================================================================
@@ -1813,7 +1638,7 @@ if __name__ == "__main__":
     # Validate required configuration
     missing = Config.validate_required_config()
     if missing:
-        logger.warning(f"⚠️  Missing configuration: {', '.join(missing)}")
+        logger.warning(f"Missing configuration: {', '.join(missing)}")
         logger.warning("The app may not function correctly without these settings.")
     
     # Run in debug mode for development (DISABLE in production!)

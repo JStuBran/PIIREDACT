@@ -183,7 +183,7 @@ class PlaylistService:
         
         # Get items
         cursor.execute(f"""
-            SELECT pi.*, c.filename, c.rep_name, c.created_at as call_date
+            SELECT pi.*, c.agent_name, c.created_at as call_date
             FROM playlist_items pi
             JOIN calls c ON pi.call_id = c.id
             WHERE pi.playlist_id = {param}
@@ -359,7 +359,7 @@ class PlaylistService:
 
         param = "%s" if self.db_type == "postgresql" else "?"
         cursor.execute(f"""
-            SELECT pi.*, c.filename, c.rep_name
+            SELECT pi.*, c.agent_name
             FROM playlist_items pi
             JOIN calls c ON pi.call_id = c.id
             WHERE pi.id = {param}

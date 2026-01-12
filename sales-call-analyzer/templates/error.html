@@ -9,7 +9,7 @@
         <h1>Something went wrong</h1>
         <p class="error-message">{{ error or 'An unexpected error occurred.' }}</p>
         <div class="error-actions">
-            <a href="{{ url_for('upload') }}" class="btn btn-primary">Go to Upload</a>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
             <a href="{{ url_for('index') }}" class="btn btn-outline">Home</a>
         </div>
     </div>

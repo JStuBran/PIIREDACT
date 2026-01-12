@@ -58,9 +58,16 @@ class DatabaseService:
             
             # Ensure the directory exists for the database file
             db_dir = Path(db_path).parent
-            if db_dir and not db_dir.exists():
-                db_dir.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Created database directory: {db_dir}")
+            if db_dir and str(db_dir) != "." and not db_dir.exists():
+                try:
+                    db_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Created database directory: {db_dir}")
+                except PermissionError:
+                    # Fall back to /tmp if we can't create the specified directory
+                    fallback_path = Path("/tmp/sales-call-analyzer/sales_calls.db")
+                    fallback_path.parent.mkdir(parents=True, exist_ok=True)
+                    db_path = str(fallback_path)
+                    logger.warning(f"Could not create {db_dir}, falling back to {db_path}")
             
             self.db_path = db_path
             logger.info(f"DatabaseService initialized: SQLite at {db_path}")
@@ -95,15 +102,15 @@ class DatabaseService:
             timestamp_default = "DEFAULT CURRENT_TIMESTAMP"
             text_type = "TEXT"
 
-        # Create calls table
+        # Create calls table with ElevenLabs integration fields
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS calls (
                 id {text_type} PRIMARY KEY,
-                filename {text_type} NOT NULL,
                 user_email {text_type} NOT NULL,
-                rep_name {text_type},
-                file_path {text_type},
-                call_type {text_type} DEFAULT 'real',
+                agent_id {text_type},
+                agent_name {text_type},
+                elevenlabs_call_id {text_type},
+                caller_id {text_type},
                 created_at TIMESTAMP {timestamp_default},
                 completed_at TIMESTAMP,
                 status {text_type},
@@ -116,38 +123,8 @@ class DatabaseService:
             )
         """)
         
-        # Migration: Add call_type column if it doesn't exist (for existing databases)
-        # Check if column exists first to avoid slow ALTER TABLE on large tables
-        if self.db_type == "postgresql":
-            # PostgreSQL: Check if column exists in information_schema
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='calls' AND column_name='call_type'
-            """)
-            column_exists = cursor.fetchone() is not None
-            if not column_exists:
-                # Column doesn't exist, add it
-                # Use ALTER TABLE without DEFAULT to avoid updating all rows immediately
-                # Then set default for new rows only
-                cursor.execute(f"""
-                    ALTER TABLE calls ADD COLUMN call_type {text_type}
-                """)
-                cursor.execute("""
-                    ALTER TABLE calls ALTER COLUMN call_type SET DEFAULT 'real'
-                """)
-                # Update existing rows in batches (optional, can be done async)
-                # For now, just set default for new rows
-                logger.info("Added call_type column to calls table")
-        else:
-            # SQLite: Check if column exists by querying table info
-            cursor.execute("PRAGMA table_info(calls)")
-            columns = [row[1] for row in cursor.fetchall()]
-            if 'call_type' not in columns:
-                cursor.execute(f"""
-                    ALTER TABLE calls ADD COLUMN call_type {text_type} DEFAULT 'real'
-                """)
-                logger.info("Added call_type column to calls table")
+        # Migration: Add new columns for existing databases
+        self._migrate_schema(cursor)
 
         # Create annotations table
         cursor.execute(f"""
@@ -166,7 +143,7 @@ class DatabaseService:
             CREATE INDEX IF NOT EXISTS idx_calls_user ON calls(user_email)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_calls_rep ON calls(rep_name)
+            CREATE INDEX IF NOT EXISTS idx_calls_agent ON calls(agent_id)
         """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_calls_created ON calls(created_at)
@@ -174,29 +151,66 @@ class DatabaseService:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status)
         """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_calls_elevenlabs ON calls(elevenlabs_call_id)
+        """)
 
         conn.commit()
         conn.close()
 
+    def _migrate_schema(self, cursor):
+        """Apply schema migrations for existing databases."""
+        text_type = "TEXT"
+        
+        # Get existing columns
+        if self.db_type == "postgresql":
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='calls'
+            """)
+            existing_columns = {row[0] for row in cursor.fetchall()}
+        else:
+            cursor.execute("PRAGMA table_info(calls)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+        
+        # Columns to add for ElevenLabs integration
+        new_columns = {
+            "agent_id": text_type,
+            "agent_name": text_type,
+            "elevenlabs_call_id": text_type,
+            "caller_id": text_type,
+        }
+        
+        for column_name, column_type in new_columns.items():
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE calls ADD COLUMN {column_name} {column_type}")
+                    logger.info(f"Added {column_name} column to calls table")
+                except Exception as e:
+                    logger.warning(f"Could not add column {column_name}: {e}")
+
     def create_call(
         self,
         call_id: str,
-        filename: str,
         user_email: str,
-        file_path: str,
-        rep_name: Optional[str] = None,
-        call_type: str = "real",
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        elevenlabs_call_id: Optional[str] = None,
+        caller_id: Optional[str] = None,
+        transcription_json: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """
-        Create a new call record.
+        Create a new call record from ElevenLabs webhook data.
 
         Args:
             call_id: Unique call identifier
-            filename: Original filename
-            user_email: User who uploaded the call
-            file_path: Path to audio file
-            rep_name: Optional rep name
-            call_type: Type of call - "real" (with PII redaction) or "ai_agent" (no redaction)
+            user_email: User who owns this call
+            agent_id: ElevenLabs agent ID
+            agent_name: Human-readable agent name
+            elevenlabs_call_id: Original call ID from ElevenLabs
+            caller_id: Caller identifier from webhook
+            transcription_json: Pre-parsed transcript data
 
         Returns:
             Call record dict
@@ -205,10 +219,14 @@ class DatabaseService:
         cursor = conn.cursor()
 
         param_style = "%s" if self.db_type == "postgresql" else "?"
+        
+        # Serialize transcription if provided
+        transcription_str = json.dumps(transcription_json) if transcription_json else None
+        
         cursor.execute(f"""
-            INSERT INTO calls (id, filename, user_email, rep_name, file_path, call_type, status)
-            VALUES ({param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style})
-        """, (call_id, filename, user_email, rep_name, file_path, call_type, "pending"))
+            INSERT INTO calls (id, user_email, agent_id, agent_name, elevenlabs_call_id, caller_id, transcription_json, status)
+            VALUES ({param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style}, {param_style})
+        """, (call_id, user_email, agent_id, agent_name, elevenlabs_call_id, caller_id, transcription_str, "pending"))
 
         conn.commit()
         conn.close()
@@ -240,6 +258,33 @@ class DatabaseService:
         else:
             row = cursor.fetchone()
         
+        conn.close()
+
+        if not row:
+            return None
+
+        return self._row_to_dict(row)
+
+    def get_call_by_elevenlabs_id(self, elevenlabs_call_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a call by ElevenLabs call ID.
+
+        Args:
+            elevenlabs_call_id: ElevenLabs call identifier
+
+        Returns:
+            Call record dict or None
+        """
+        conn = self._get_connection()
+        
+        if self.db_type == "postgresql":
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            cursor = conn.cursor()
+
+        param_style = "%s" if self.db_type == "postgresql" else "?"
+        cursor.execute(f"SELECT * FROM calls WHERE elevenlabs_call_id = {param_style}", (elevenlabs_call_id,))
+        row = cursor.fetchone()
         conn.close()
 
         if not row:
@@ -352,8 +397,9 @@ class DatabaseService:
             transcription = call.get("transcription_json")
             
             if transcription:
-                redacted_text = transcription.get("redacted_text", "").lower()
-                if query_lower in redacted_text:
+                # Search in full text
+                full_text = transcription.get("text", "").lower()
+                if query_lower in full_text:
                     matching_calls.append(call)
                     if len(matching_calls) >= limit:
                         break
@@ -363,9 +409,9 @@ class DatabaseService:
     def list_calls(
         self,
         user_email: Optional[str] = None,
-        rep_name: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
         status: Optional[str] = None,
-        call_type: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
         order_by: str = "created_at DESC",
@@ -375,9 +421,9 @@ class DatabaseService:
 
         Args:
             user_email: Filter by user email
-            rep_name: Filter by rep name
+            agent_id: Filter by agent ID
+            agent_name: Filter by agent name
             status: Filter by status
-            call_type: Filter by call type ("real" or "ai_agent")
             limit: Maximum number of results
             offset: Offset for pagination
             order_by: Order by clause
@@ -401,17 +447,17 @@ class DatabaseService:
             where_clauses.append(f"user_email = {param_style}")
             params.append(user_email)
 
-        if rep_name:
-            where_clauses.append(f"rep_name = {param_style}")
-            params.append(rep_name)
+        if agent_id:
+            where_clauses.append(f"agent_id = {param_style}")
+            params.append(agent_id)
+
+        if agent_name:
+            where_clauses.append(f"agent_name = {param_style}")
+            params.append(agent_name)
 
         if status:
             where_clauses.append(f"status = {param_style}")
             params.append(status)
-        
-        if call_type:
-            where_clauses.append(f"call_type = {param_style}")
-            params.append(call_type)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -432,18 +478,18 @@ class DatabaseService:
     def count_calls(
         self,
         user_email: Optional[str] = None,
-        rep_name: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
         status: Optional[str] = None,
-        call_type: Optional[str] = None,
     ) -> int:
         """
         Count calls matching filters.
 
         Args:
             user_email: Filter by user email
-            rep_name: Filter by rep name
+            agent_id: Filter by agent ID
+            agent_name: Filter by agent name
             status: Filter by status
-            call_type: Filter by call type ("real" or "ai_agent")
 
         Returns:
             Count of matching calls
@@ -460,17 +506,17 @@ class DatabaseService:
             where_clauses.append(f"user_email = {param_style}")
             params.append(user_email)
 
-        if rep_name:
-            where_clauses.append(f"rep_name = {param_style}")
-            params.append(rep_name)
+        if agent_id:
+            where_clauses.append(f"agent_id = {param_style}")
+            params.append(agent_id)
+
+        if agent_name:
+            where_clauses.append(f"agent_name = {param_style}")
+            params.append(agent_name)
 
         if status:
             where_clauses.append(f"status = {param_style}")
             params.append(status)
-        
-        if call_type:
-            where_clauses.append(f"call_type = {param_style}")
-            params.append(call_type)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -484,14 +530,14 @@ class DatabaseService:
     def get_summary_stats(
         self,
         user_email: Optional[str] = None,
-        rep_name: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Get summary statistics for calls.
 
         Args:
             user_email: Filter by user email
-            rep_name: Filter by rep name
+            agent_id: Filter by agent ID
 
         Returns:
             Dict with summary stats
@@ -508,9 +554,9 @@ class DatabaseService:
             where_clauses.append(f"user_email = {param_style}")
             params.append(user_email)
 
-        if rep_name:
-            where_clauses.append(f"rep_name = {param_style}")
-            params.append(rep_name)
+        if agent_id:
+            where_clauses.append(f"agent_id = {param_style}")
+            params.append(agent_id)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -530,10 +576,11 @@ class DatabaseService:
         total_calls = cursor.fetchone()[0]
 
         # Get completed calls with stats
+        where_with_status = where_sql + (" AND " if where_sql else "WHERE ") + "status = 'complete' AND stats_json IS NOT NULL"
         query = f"""
             SELECT stats_json
             FROM calls
-            {where_sql} AND status = 'complete' AND stats_json IS NOT NULL
+            {where_with_status}
         """
         cursor.execute(query, params)
         stats_rows = cursor.fetchall()
@@ -565,15 +612,15 @@ class DatabaseService:
             "avg_filler_words": round(total_filler / calls_with_stats, 1) if calls_with_stats else 0,
         }
 
-    def get_reps(self, user_email: Optional[str] = None) -> List[str]:
+    def get_agents(self, user_email: Optional[str] = None) -> List[Dict[str, str]]:
         """
-        Get list of unique rep names.
+        Get list of unique agents.
 
         Args:
             user_email: Filter by user email
 
         Returns:
-            List of rep names
+            List of agent dicts with agent_id and agent_name
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -582,25 +629,25 @@ class DatabaseService:
 
         if user_email:
             query = f"""
-                SELECT DISTINCT rep_name
+                SELECT DISTINCT agent_id, agent_name
                 FROM calls
-                WHERE rep_name IS NOT NULL AND user_email = {param_style}
-                ORDER BY rep_name
+                WHERE agent_id IS NOT NULL AND user_email = {param_style}
+                ORDER BY agent_name
             """
             cursor.execute(query, (user_email,))
         else:
             query = """
-                SELECT DISTINCT rep_name
+                SELECT DISTINCT agent_id, agent_name
                 FROM calls
-                WHERE rep_name IS NOT NULL
-                ORDER BY rep_name
+                WHERE agent_id IS NOT NULL
+                ORDER BY agent_name
             """
             cursor.execute(query)
 
-        reps = [row[0] for row in cursor.fetchall()]
+        agents = [{"agent_id": row[0], "agent_name": row[1] or row[0]} for row in cursor.fetchall()]
         conn.close()
 
-        return reps
+        return agents
 
     def _row_to_dict(self, row: Union[sqlite3.Row, Dict]) -> Dict[str, Any]:
         """Convert database row to dict, parsing JSON fields."""
@@ -679,3 +726,4 @@ class DatabaseService:
         if call:
             return call.get("transcription_json")
         return None
+

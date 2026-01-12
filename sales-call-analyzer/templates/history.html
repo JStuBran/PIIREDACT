@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Call History - Sales Call Analyzer{% endblock %}
+{% block title %}Call History - AI Call Analyzer{% endblock %}
 
 {% block content %}
 <div class="history">
@@ -9,9 +9,6 @@
         <div class="header-actions">
             <a href="{{ url_for('export_calls', export_type='csv') }}" class="btn btn-outline">Export CSV</a>
             <a href="{{ url_for('export_calls', export_type='json') }}" class="btn btn-outline">Export JSON</a>
-            <a href="{{ url_for('upload') }}" class="btn btn-primary">
-                <span>+</span> Upload New Call
-            </a>
         </div>
     </div>
 
@@ -25,18 +22,18 @@
                     id="search" 
                     name="search" 
                     value="{{ search_query }}"
-                    placeholder="Search by filename..."
+                    placeholder="Search transcripts..."
                     class="form-input"
                 >
             </div>
 
             <div class="filter-group">
-                <label for="rep">Rep</label>
-                <select id="rep" name="rep" class="form-input">
-                    <option value="">All Reps</option>
-                    {% for rep in reps %}
-                    <option value="{{ rep }}" {% if rep == rep_filter %}selected{% endif %}>
-                        {{ rep }}
+                <label for="agent">Agent</label>
+                <select id="agent" name="agent" class="form-input">
+                    <option value="">All Agents</option>
+                    {% for agent in agents %}
+                    <option value="{{ agent.agent_id }}" {% if agent.agent_id == agent_filter %}selected{% endif %}>
+                        {{ agent.agent_name or agent.agent_id[:8] }}
                     </option>
                     {% endfor %}
                 </select>
@@ -48,18 +45,8 @@
                     <option value="">All Statuses</option>
                     <option value="complete" {% if status_filter == 'complete' %}selected{% endif %}>Complete</option>
                     <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
-                    <option value="transcribing" {% if status_filter == 'transcribing' %}selected{% endif %}>Transcribing</option>
                     <option value="analyzing" {% if status_filter == 'analyzing' %}selected{% endif %}>Analyzing</option>
                     <option value="error" {% if status_filter == 'error' %}selected{% endif %}>Error</option>
-                </select>
-            </div>
-
-            <div class="filter-group">
-                <label for="call_type">Call Type</label>
-                <select id="call_type" name="call_type" class="form-input">
-                    <option value="">All Types</option>
-                    <option value="real" {% if call_type_filter == 'real' %}selected{% endif %}>Real Calls</option>
-                    <option value="ai_agent" {% if call_type_filter == 'ai_agent' %}selected{% endif %}>AI Agent Calls</option>
                 </select>
             </div>
 
@@ -85,11 +72,10 @@
                         <th style="width: 40px;">
                             <input type="checkbox" id="select-all" title="Select all">
                         </th>
-                        <th>Filename</th>
-                        <th>Type</th>
-                        <th>Rep</th>
+                        <th>Agent</th>
                         <th>Status</th>
                         <th>Created</th>
+                        <th>Duration</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -102,24 +88,15 @@
                             {% endif %}
                         </td>
                         <td>
-                            <div class="file-cell">
-                                <span class="file-icon">🎙️</span>
-                                <span class="file-name">{{ call.filename }}</span>
+                            <div class="agent-cell">
+                                <span class="agent-icon">🤖</span>
+                                <div class="agent-details">
+                                    <span class="agent-name">{{ call.agent_name or 'Unknown Agent' }}</span>
+                                    {% if call.caller_id %}
+                                    <span class="caller-id">Caller: {{ call.caller_id[:12] }}...</span>
+                                    {% endif %}
+                                </div>
                             </div>
-                        </td>
-                        <td>
-                            {% if call.call_type == 'ai_agent' %}
-                                <span class="call-type-badge call-type-ai">🤖 AI Agent</span>
-                            {% else %}
-                                <span class="call-type-badge call-type-real">👤 Real</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if call.rep_name %}
-                                <span class="rep-badge">{{ call.rep_name }}</span>
-                            {% else %}
-                                <span class="text-muted">—</span>
-                            {% endif %}
                         </td>
                         <td>
                             <span class="status-badge status-{{ call.status }}">
@@ -133,6 +110,13 @@
                                 —
                             {% endif %}
                         </td>
+                        <td class="text-muted">
+                            {% if call.transcription_json and call.transcription_json.duration_min %}
+                                {{ call.transcription_json.duration_min }} min
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
                         <td>
                             <div class="action-buttons">
                                 {% if call.status == 'complete' %}
@@ -140,9 +124,9 @@
                                     <a href="{{ url_for('transcript', job_id=call.id) }}" class="btn-link">Transcript</a>
                                     <a href="{{ url_for('download', job_id=call.id, report_type='coaching') }}" class="btn-link">PDF</a>
                                 {% elif call.status == 'error' %}
-                                    <span class="text-muted">Error</span>
+                                    <span class="error-text" title="{{ call.error }}">Error</span>
                                 {% else %}
-                                    <a href="{{ url_for('process', job_id=call.id) }}" class="btn-link">Processing</a>
+                                    <span class="text-muted">Processing...</span>
                                 {% endif %}
                             </div>
                         </td>
@@ -156,7 +140,7 @@
         {% if total_pages > 1 %}
         <div class="pagination">
             {% if page > 1 %}
-            <a href="{{ url_for('history', page=page-1, rep=rep_filter, status=status_filter, call_type=call_type_filter, search=search_query) }}" 
+            <a href="{{ url_for('history', page=page-1, agent=agent_filter, status=status_filter, search=search_query) }}" 
                class="btn btn-outline">Previous</a>
             {% endif %}
 
@@ -165,7 +149,7 @@
             </span>
 
             {% if page < total_pages %}
-            <a href="{{ url_for('history', page=page+1, rep=rep_filter, status=status_filter, call_type=call_type_filter, search=search_query) }}" 
+            <a href="{{ url_for('history', page=page+1, agent=agent_filter, status=status_filter, search=search_query) }}" 
                class="btn btn-outline">Next</a>
             {% endif %}
         </div>
@@ -175,8 +159,8 @@
         <div class="empty-state">
             <div class="empty-icon">📞</div>
             <h3>No calls found</h3>
-            <p>Try adjusting your filters or upload a new call.</p>
-            <a href="{{ url_for('upload') }}" class="btn btn-primary">Upload Call</a>
+            <p>Try adjusting your filters or configure webhooks to receive calls.</p>
+            <a href="{{ url_for('webhook_status') }}" class="btn btn-primary">Configure Webhooks</a>
         </div>
         {% endif %}
     </div>
@@ -238,9 +222,7 @@ if (compareForm) {
 
 updateCompareButton();
 </script>
-{% endblock %}
 
-{% block styles %}
 <style>
 .history {
     max-width: 1200px;
@@ -278,33 +260,9 @@ updateCompareButton();
 
 .filters-form {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr auto;
+    grid-template-columns: 2fr 1fr 1fr auto;
     gap: 16px;
     align-items: end;
-}
-
-.call-type-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 16px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.call-type-real {
-    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-    color: #1976d2;
-    border: 1px solid #90caf9;
-}
-
-.call-type-ai {
-    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
-    color: #7b1fa2;
-    border: 1px solid #ce93d8;
 }
 
 .filter-group {
@@ -377,28 +335,34 @@ updateCompareButton();
     border-bottom: none;
 }
 
-.file-cell {
+.calls-table tbody tr:hover {
+    background: var(--bg);
+}
+
+.agent-cell {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
 }
 
-.file-icon {
-    font-size: 18px;
+.agent-icon {
+    font-size: 24px;
 }
 
-.file-name {
-    font-weight: 500;
+.agent-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
-.rep-badge {
-    display: inline-block;
-    padding: 4px 12px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 500;
+.agent-name {
+    font-weight: 600;
+}
+
+.caller-id {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: monospace;
 }
 
 .status-badge {
@@ -416,10 +380,8 @@ updateCompareButton();
 }
 
 .status-pending,
-.status-transcribing,
 .status-analyzing,
-.status-generating_pdf,
-.status-sending_email {
+.status-queued {
     background: #fff3cd;
     color: #856404;
 }
@@ -439,10 +401,19 @@ updateCompareButton();
     text-decoration: none;
     font-weight: 500;
     font-size: 14px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
 }
 
 .btn-link:hover {
-    text-decoration: underline;
+    background: var(--primary);
+    color: white;
+}
+
+.error-text {
+    color: #721c24;
+    cursor: help;
 }
 
 .pagination {

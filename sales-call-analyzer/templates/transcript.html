@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Transcript - Sales Call Analyzer{% endblock %}
+{% block title %}Transcript - AI Call Analyzer{% endblock %}
 
 {% block content %}
 <div class="transcript-container">
@@ -8,22 +8,11 @@
         <div>
             <h1>Call Transcript</h1>
             <p class="subtitle">
-                {{ job.filename }}
-                {% if job.call_type == 'ai_agent' %}
-                    <span class="call-type-badge call-type-ai" style="margin-left: 12px;">🤖 AI Agent Call</span>
-                {% else %}
-                    <span class="call-type-badge call-type-real" style="margin-left: 12px;">👤 Real Call</span>
+                <span class="agent-badge">🤖 {{ job.agent_name or 'AI Agent' }}</span>
+                {% if job.created_at %}
+                    &middot; {{ job.created_at.strftime('%Y-%m-%d %H:%M') }}
                 {% endif %}
             </p>
-            {% if job.call_type == 'ai_agent' %}
-            <p class="privacy-note" style="margin-top: 8px; font-size: 13px; color: var(--text-muted);">
-                <strong>Note:</strong> This is an AI agent call. No PII redaction was performed.
-            </p>
-            {% else %}
-            <p class="privacy-note" style="margin-top: 8px; font-size: 13px; color: var(--text-muted);">
-                <strong>Privacy:</strong> PII has been redacted from this transcript.
-            </p>
-            {% endif %}
         </div>
         <div class="transcript-actions">
             <a href="{{ url_for('report', job_id=job.id) }}" class="btn btn-outline">View Report</a>
@@ -43,7 +32,7 @@
             {% set left_pct = (segment.start / total_duration * 100) %}
             {% set width_pct = ((segment.end - segment.start) / total_duration * 100) %}
             <div 
-                class="timeline-segment {{ 'agent' if segment.speaker == 'spk_0' else 'customer' }}"
+                class="timeline-segment {{ 'agent' if segment.speaker == 'agent' else 'user' }}"
                 style="left: {{ left_pct }}%; width: {{ width_pct }}%;"
                 data-start="{{ segment.start }}"
                 title="{{ segment.speaker }}: {{ segment.text[:50] }}..."
@@ -51,8 +40,8 @@
             {% endfor %}
         </div>
         <div class="timeline-legend">
-            <span class="legend-item agent"><span class="legend-dot"></span> Rep</span>
-            <span class="legend-item customer"><span class="legend-dot"></span> Customer</span>
+            <span class="legend-item agent"><span class="legend-dot"></span> Agent</span>
+            <span class="legend-item user"><span class="legend-dot"></span> User</span>
             <span class="timeline-duration">{{ ((segments[-1].end or 0) / 60)|round(1) }} min</span>
         </div>
     </div>
@@ -72,9 +61,6 @@
             <span id="search-results" class="search-results"></span>
         </div>
         <div class="view-options">
-            <label>
-                <input type="checkbox" id="show-pii" checked> Highlight PII
-            </label>
             <label>
                 <input type="checkbox" id="show-timestamps" checked> Show Timestamps
             </label>
@@ -107,8 +93,8 @@
                     </button>
                     {% endif %}
                     {% if segment.speaker %}
-                    <span class="speaker-label {{ 'agent' if segment.speaker == 'spk_0' else 'customer' }}">
-                        {{ 'Rep' if segment.speaker == 'spk_0' else 'Customer' }}
+                    <span class="speaker-label {{ 'agent' if segment.speaker == 'agent' else 'user' }}">
+                        {{ 'Agent' if segment.speaker == 'agent' else 'User' }}
                     </span>
                     {% endif %}
                     <button class="add-note-btn" data-segment-id="{{ loop.index0 }}" data-time="{{ segment.start }}" title="Add coaching note">
@@ -124,7 +110,7 @@
         {% else %}
             <!-- Fallback to full text if no segments -->
             <div class="transcript-full">
-                {{ redacted_text }}
+                {{ full_text }}
             </div>
         {% endif %}
     </div>
@@ -181,7 +167,6 @@
 <script>
 // Transcript data
 const segments = {{ segments|tojson }};
-const piiFindings = {{ pii_findings|tojson }};
 const timestampHighlights = {{ timestamp_highlights|tojson }};
 
 // Search functionality
@@ -211,7 +196,6 @@ searchInput.addEventListener('input', function() {
     
     segmentElements.forEach((el, idx) => {
         const text = el.textContent.toLowerCase();
-        const segmentText = el.textContent;
         let index = text.indexOf(query);
         
         while (index !== -1) {
@@ -247,7 +231,6 @@ function highlightSearchMatches() {
         const start = match.index;
         const end = start + match.length;
         
-        // Create highlighted version
         const before = text.substring(0, start);
         const highlighted = text.substring(start, end);
         const after = text.substring(end);
@@ -259,7 +242,6 @@ function highlightSearchMatches() {
 function clearHighlights() {
     const segmentElements = document.querySelectorAll('.segment-text');
     segmentElements.forEach(el => {
-        // Restore original text (from data attribute if available, otherwise textContent)
         const originalText = el.getAttribute('data-text') || el.textContent;
         el.innerHTML = escapeHtml(originalText);
     });
@@ -304,7 +286,6 @@ searchNext.addEventListener('click', function() {
     updateSearchUI();
 });
 
-// Keyboard shortcuts
 searchInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
         e.preventDefault();
@@ -319,8 +300,6 @@ searchInput.addEventListener('keydown', function(e) {
 // Timestamp links
 document.querySelectorAll('.timestamp-link').forEach(link => {
     link.addEventListener('click', function() {
-        const time = parseFloat(this.getAttribute('data-time'));
-        // Scroll to segment
         const segment = this.closest('.transcript-segment');
         segment.scrollIntoView({ behavior: 'smooth', block: 'center' });
         segment.classList.add('timestamp-highlight');
@@ -343,17 +322,6 @@ document.getElementById('show-speakers').addEventListener('change', function() {
     });
 });
 
-// PII highlighting (if we have PII findings data)
-if (piiFindings && piiFindings.length > 0 && document.getElementById('show-pii').checked) {
-    // Note: PII is already redacted in the text, but we could highlight the redacted portions
-    // For now, we'll just show a note about redactions
-}
-
-document.getElementById('show-pii').addEventListener('change', function() {
-    // Toggle PII highlighting if implemented
-});
-
-// Helper function
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -364,7 +332,6 @@ function escapeHtml(text) {
 document.querySelectorAll('.timeline-segment').forEach(seg => {
     seg.addEventListener('click', function() {
         const startTime = parseFloat(this.getAttribute('data-start'));
-        // Find matching transcript segment
         const segments = document.querySelectorAll('.transcript-segment');
         for (const segment of segments) {
             const segStart = parseFloat(segment.getAttribute('data-start'));
@@ -383,7 +350,6 @@ const jobId = "{{ job.id }}";
 let currentNoteTime = null;
 let annotations = [];
 
-// Load existing annotations
 async function loadAnnotations() {
     try {
         const response = await fetch(`/api/annotations/${jobId}`);
@@ -398,13 +364,10 @@ async function loadAnnotations() {
 }
 
 function renderAnnotations() {
-    // Clear all inline notes
     document.querySelectorAll('.segment-notes').forEach(el => el.innerHTML = '');
     
-    // Add annotations to appropriate segments
     annotations.forEach(ann => {
         const time = ann.timestamp_sec;
-        // Find closest segment
         let closestSegment = null;
         let closestDiff = Infinity;
         
@@ -435,7 +398,6 @@ function renderAnnotations() {
         }
     });
     
-    // Add delete handlers
     document.querySelectorAll('.note-delete').forEach(btn => {
         btn.addEventListener('click', async function() {
             const annId = this.getAttribute('data-id');
@@ -444,7 +406,6 @@ function renderAnnotations() {
     });
 }
 
-// Add note button handlers
 document.querySelectorAll('.add-note-btn').forEach(btn => {
     btn.addEventListener('click', function() {
         const time = parseFloat(this.getAttribute('data-time'));
@@ -506,15 +467,12 @@ async function deleteAnnotation(annId) {
     }
 }
 
-// Toggle coaching panel
 function toggleCoachingPanel() {
     document.getElementById('coaching-panel').classList.toggle('show');
 }
 
-// Load annotations on page load
 loadAnnotations();
 
-// Close modal on escape
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         closeNoteModal();
@@ -546,6 +504,22 @@ document.addEventListener('keydown', function(e) {
 .subtitle {
     color: var(--text-muted);
     font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.agent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    color: #7b1fa2;
+    border: 1px solid #ce93d8;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .transcript-actions {
@@ -655,7 +629,16 @@ document.addEventListener('keydown', function(e) {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: var(--text-muted);
+}
+
+.speaker-label.agent {
+    background: var(--primary);
+    color: white;
+}
+
+.speaker-label.user {
+    background: #64748b;
+    color: white;
 }
 
 .segment-text {
@@ -679,15 +662,6 @@ document.addEventListener('keydown', function(e) {
 .search-highlight.current {
     background: #ffc107;
     font-weight: 600;
-}
-
-.search-scroll-target {
-    animation: highlight-pulse 1s ease-in-out;
-}
-
-@keyframes highlight-pulse {
-    0%, 100% { background: transparent; }
-    50% { background: rgba(15, 98, 254, 0.1); }
 }
 
 .timestamp-highlight {
@@ -766,7 +740,7 @@ document.addEventListener('keydown', function(e) {
     background: var(--primary);
 }
 
-.timeline-segment.customer {
+.timeline-segment.user {
     background: #64748b;
 }
 
@@ -795,24 +769,13 @@ document.addEventListener('keydown', function(e) {
     background: var(--primary);
 }
 
-.legend-item.customer .legend-dot {
+.legend-item.user .legend-dot {
     background: #64748b;
 }
 
 .timeline-duration {
     margin-left: auto;
     font-weight: 600;
-}
-
-/* Speaker Labels */
-.speaker-label.agent {
-    background: var(--primary);
-    color: white;
-}
-
-.speaker-label.customer {
-    background: #64748b;
-    color: white;
 }
 
 /* Add Note Button */
@@ -828,10 +791,6 @@ document.addEventListener('keydown', function(e) {
 
 .transcript-segment:hover .add-note-btn {
     opacity: 1;
-}
-
-.add-note-btn:hover {
-    transform: scale(1.2);
 }
 
 /* Segment Notes */
@@ -851,10 +810,6 @@ document.addEventListener('keydown', function(e) {
     font-size: 13px;
 }
 
-.inline-note .note-icon {
-    flex-shrink: 0;
-}
-
 .inline-note .note-text {
     flex: 1;
     color: #92400e;
@@ -866,7 +821,6 @@ document.addEventListener('keydown', function(e) {
     color: #92400e;
     cursor: pointer;
     font-size: 18px;
-    line-height: 1;
     opacity: 0.5;
 }
 
@@ -874,7 +828,7 @@ document.addEventListener('keydown', function(e) {
     opacity: 1;
 }
 
-/* Note Modal */
+/* Modal */
 .modal {
     display: none;
     position: fixed;
@@ -897,8 +851,6 @@ document.addEventListener('keydown', function(e) {
     border-radius: var(--radius);
     width: 100%;
     max-width: 500px;
-    max-height: 90vh;
-    overflow: hidden;
     box-shadow: 0 25px 50px rgba(0,0,0,0.25);
 }
 
@@ -949,80 +901,6 @@ document.addEventListener('keydown', function(e) {
     padding: 16px 20px;
     border-top: 1px solid var(--border);
     background: var(--bg);
-}
-
-/* Coaching Panel (side panel) */
-.coaching-panel {
-    position: fixed;
-    right: -400px;
-    top: 0;
-    width: 400px;
-    height: 100vh;
-    background: var(--card-bg);
-    border-left: 1px solid var(--border);
-    box-shadow: -5px 0 25px rgba(0,0,0,0.1);
-    z-index: 100;
-    transition: right 0.3s ease;
-}
-
-.coaching-panel.show {
-    right: 0;
-}
-
-.panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-}
-
-.panel-header h3 {
-    margin: 0;
-}
-
-.panel-close {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-}
-
-.panel-content {
-    padding: 20px;
-    overflow-y: auto;
-    height: calc(100vh - 60px);
-}
-
-/* Call Type Badges */
-.call-type-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.call-type-real {
-    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-    color: #1976d2;
-    border: 1px solid #90caf9;
-}
-
-.call-type-ai {
-    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
-    color: #7b1fa2;
-    border: 1px solid #ce93d8;
-}
-
-.privacy-note {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin-top: 8px;
 }
 </style>
 {% endblock %}

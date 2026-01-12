@@ -92,14 +92,14 @@
                 <div class="item-number">{{ loop.index }}</div>
                 <div class="item-content">
                     <div class="item-header">
-                        <h4>{{ item.filename }}</h4>
+                        <h4>{{ item.agent_name or 'Call #' ~ loop.index }}</h4>
                         {% if is_completed %}
                         <span class="completed-badge">✓ Completed</span>
                         {% endif %}
                     </div>
                     <div class="item-meta">
-                        {% if item.rep_name %}
-                        <span>Rep: {{ item.rep_name }}</span>
+                        {% if item.agent_name %}
+                        <span>Agent: {{ item.agent_name }}</span>
                         {% endif %}
                         {% if item.call_date %}
                         <span>{{ item.call_date.strftime('%Y-%m-%d') if item.call_date is not string else item.call_date[:10] }}</span>

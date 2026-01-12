@@ -23,6 +23,10 @@ class Config:
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
     
+    # ElevenLabs - required for webhook integration
+    ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
+    ELEVENLABS_WEBHOOK_SECRET = os.environ.get("ELEVENLABS_WEBHOOK_SECRET")
+    
     @classmethod
     def validate_required_config(cls) -> list:
         """Check for required configuration and return list of missing items."""
@@ -31,12 +35,9 @@ class Config:
             missing.append("OPENAI_API_KEY")
         if cls.SECRET_KEY and "DO-NOT-USE" in cls.SECRET_KEY:
             missing.append("SECRET_KEY (using insecure default)")
+        if not cls.ELEVENLABS_API_KEY:
+            missing.append("ELEVENLABS_API_KEY")
         return missing
-    
-    # Whisper
-    # Default to 'tiny' for speed (3-5x faster than 'base')
-    # Use 'base' or larger for better accuracy
-    WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny")
     
     # Email - SMTP
     SMTP_HOST = os.environ.get("SMTP_HOST")
@@ -53,18 +54,13 @@ class Config:
     ALLOWED_EMAILS: List[str] = []
     MAGIC_LINK_EXPIRY_MINUTES = int(os.environ.get("MAGIC_LINK_EXPIRY_MINUTES", "15"))
     
-    # Upload
-    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max upload
-    UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/tmp/sales-call-analyzer")
-    ALLOWED_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "flac", "webm", "mp4"}
-    
     # Database
     # If DATABASE_URL is set (e.g., from Railway PostgreSQL), it will be used
     # Otherwise, falls back to SQLite using DATABASE_PATH
     DATABASE_URL = os.environ.get("DATABASE_URL")  # PostgreSQL connection string
     DATABASE_PATH = os.environ.get("DATABASE_PATH", "sales_calls.db")  # SQLite path
     
-    # App URL (for magic links)
+    # App URL (for magic links and webhook configuration)
     APP_URL = os.environ.get("APP_URL", "http://localhost:5000")
 
     @classmethod

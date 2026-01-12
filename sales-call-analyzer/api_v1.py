@@ -290,12 +290,12 @@ def list_calls():
     limit = min(int(request.args.get("limit", 50)), 100)
     offset = int(request.args.get("offset", 0))
     status = request.args.get("status")
-    rep_name = request.args.get("rep")
+    agent_name = request.args.get("agent") or request.args.get("rep")  # Support both params
     
     calls = db.list_calls(
         user_email=request.api_user_email,
         status=status,
-        rep_name=rep_name,
+        agent_name=agent_name,
         limit=limit,
         offset=offset,
     )
@@ -321,7 +321,7 @@ def list_calls():
         call.pop("transcription_json", None)  # Large, use /calls/:id for full data
         call.pop("file_path", None)
     
-    total = db.count_calls(user_email=request.api_user_email, status=status, rep_name=rep_name)
+    total = db.count_calls(user_email=request.api_user_email, status=status, agent_name=agent_name)
     
     return jsonify({
         "calls": calls,
@@ -569,29 +569,30 @@ def get_rep_analytics():
     from services import DatabaseService
     
     db = DatabaseService()
-    reps = db.get_reps(user_email=request.api_user_email)
+    agents = db.get_agents(user_email=request.api_user_email)
     
-    rep_data = []
-    for rep in reps:
-        rep_calls = db.list_calls(
+    agent_data = []
+    for agent in agents:
+        agent_calls = db.list_calls(
             user_email=request.api_user_email,
-            rep_name=rep,
+            agent_name=agent.get("agent_name"),
             status="complete",
             limit=100,
         )
         
-        if rep_calls:
-            avg_duration = sum(c.get("stats_json", {}).get("duration_min", 0) for c in rep_calls) / len(rep_calls)
-            avg_questions = sum(c.get("stats_json", {}).get("questions", {}).get("agent_total", 0) for c in rep_calls) / len(rep_calls)
+        if agent_calls:
+            avg_duration = sum(c.get("stats_json", {}).get("duration_min", 0) for c in agent_calls) / len(agent_calls)
+            avg_questions = sum(c.get("stats_json", {}).get("questions", {}).get("agent_total", 0) for c in agent_calls) / len(agent_calls)
             
-            rep_data.append({
-                "rep_name": rep,
-                "call_count": len(rep_calls),
+            agent_data.append({
+                "agent_name": agent.get("agent_name"),
+                "agent_id": agent.get("agent_id"),
+                "call_count": len(agent_calls),
                 "avg_duration_min": round(avg_duration, 1),
                 "avg_questions": round(avg_questions, 1),
             })
     
-    return jsonify({"reps": rep_data})
+    return jsonify({"agents": agent_data})
 
 
 # ============================================================================

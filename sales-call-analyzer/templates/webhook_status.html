@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+
+{% block title %}Webhook Status - AI Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="webhook-status">
+    <div class="page-header">
+        <h1>🔗 ElevenLabs Webhook Configuration</h1>
+        <p class="subtitle">Connect your ElevenLabs agents to automatically receive and analyze calls</p>
+    </div>
+
+    <!-- Webhook URL Card -->
+    <div class="config-card">
+        <div class="card-header">
+            <h2>Webhook URL</h2>
+            <span class="badge badge-info">POST</span>
+        </div>
+        <div class="webhook-url-container">
+            <code class="webhook-url" id="webhook-url">{{ webhook_url }}</code>
+            <button class="btn btn-outline copy-btn" onclick="copyWebhookUrl()">
+                📋 Copy
+            </button>
+        </div>
+        <div class="help-text">
+            <p>Configure this URL in your ElevenLabs agent settings as the post-call webhook endpoint.</p>
+        </div>
+    </div>
+
+    <!-- Setup Instructions -->
+    <div class="instructions-card">
+        <h2>Setup Instructions</h2>
+        <ol class="setup-steps">
+            <li>
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h3>Go to ElevenLabs Dashboard</h3>
+                    <p>Navigate to your Conversational AI agents in the ElevenLabs console.</p>
+                </div>
+            </li>
+            <li>
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h3>Select Your Agent</h3>
+                    <p>Click on the agent you want to connect for call analysis.</p>
+                </div>
+            </li>
+            <li>
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h3>Configure Webhook</h3>
+                    <p>In the agent settings, find the "Webhooks" or "Post-call" section and paste the webhook URL above.</p>
+                </div>
+            </li>
+            <li>
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <h3>Enable Transcript</h3>
+                    <p>Make sure to enable sending the full transcript with timestamps in the webhook payload.</p>
+                </div>
+            </li>
+            <li>
+                <div class="step-number">5</div>
+                <div class="step-content">
+                    <h3>Test the Integration</h3>
+                    <p>Make a test call with your agent. The call should appear in your dashboard within seconds of completion.</p>
+                </div>
+            </li>
+        </ol>
+    </div>
+
+    <!-- Recent Webhook Activity -->
+    <div class="activity-card">
+        <div class="card-header">
+            <h2>Recent Calls</h2>
+            <a href="{{ url_for('history') }}" class="btn btn-sm btn-outline">View All</a>
+        </div>
+        
+        {% if recent_calls %}
+        <div class="calls-list">
+            {% for call in recent_calls %}
+            <div class="call-item">
+                <div class="call-icon">
+                    {% if call.status == 'complete' %}✅{% elif call.status == 'error' %}❌{% else %}⏳{% endif %}
+                </div>
+                <div class="call-info">
+                    <div class="call-agent">{{ call.agent_name or 'Unknown Agent' }}</div>
+                    <div class="call-time">
+                        {% if call.created_at %}
+                            {{ call.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="call-status">
+                    <span class="status-badge status-{{ call.status }}">{{ call.status }}</span>
+                </div>
+                {% if call.status == 'complete' %}
+                <a href="{{ url_for('report', job_id=call.id) }}" class="btn btn-sm btn-outline">View Report</a>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📡</div>
+            <h3>No calls received yet</h3>
+            <p>Once you configure the webhook in ElevenLabs, calls will appear here automatically.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyWebhookUrl() {
+    const url = document.getElementById('webhook-url').textContent;
+    navigator.clipboard.writeText(url).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✅ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.remove('copied');
+        }, 2000);
+    });
+}
+</script>
+
+<style>
+.webhook-status {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.page-header {
+    margin-bottom: 32px;
+    text-align: center;
+}
+
+.page-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.page-header .subtitle {
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+.config-card,
+.instructions-card,
+.activity-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.card-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-info {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.webhook-url-container {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: var(--bg);
+    padding: 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+
+.webhook-url {
+    flex: 1;
+    font-family: monospace;
+    font-size: 14px;
+    word-break: break-all;
+    color: var(--primary);
+}
+
+.copy-btn.copied {
+    background: #d1f2eb;
+    border-color: #0e7c5e;
+    color: #0e7c5e;
+}
+
+.help-text {
+    margin-top: 12px;
+    padding: 12px;
+    background: #fff8e1;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    color: #856404;
+}
+
+.instructions-card h2 {
+    margin-bottom: 24px;
+}
+
+.setup-steps {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.setup-steps li {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.setup-steps li:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.step-number {
+    width: 32px;
+    height: 32px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.step-content h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.step-content p {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 0;
+}
+
+.calls-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.call-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.call-icon {
+    font-size: 24px;
+}
+
+.call-info {
+    flex: 1;
+}
+
+.call-agent {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.call-time {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.status-complete {
+    background: #d1f2eb;
+    color: #0e7c5e;
+}
+
+.status-pending,
+.status-analyzing {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.empty-state h3 {
+    font-size: 18px;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+</style>
+{% endblock %}
+

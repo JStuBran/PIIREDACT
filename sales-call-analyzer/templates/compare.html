@@ -18,9 +18,9 @@
                 <div class="call-header">
                     <span class="file-icon">🎙️</span>
                     <div>
-                        <div class="call-filename">{{ call.filename }}</div>
-                        {% if call.rep_name %}
-                        <div class="call-rep">{{ call.rep_name }}</div>
+                        <div class="call-filename">{{ call.agent_name or 'Call ' ~ loop.index }}</div>
+                        {% if call.agent_name %}
+                        <div class="call-rep">{{ call.agent_name }}</div>
                         {% endif %}
                     </div>
                 </div>
@@ -91,7 +91,7 @@
                         <td>
                             <div class="file-cell">
                                 <span class="file-icon">🎙️</span>
-                                <span>{{ call.filename }}</span>
+                                <span>{{ call.agent_name or 'Call ' ~ loop.index }}</span>
                             </div>
                         </td>
                         <td>{{ comparison.stats_comparison.durations[loop.index0] }}</td>

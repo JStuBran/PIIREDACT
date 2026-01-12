@@ -3,7 +3,7 @@
 import logging
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict
 
 from celery import Celery
 
@@ -33,29 +33,25 @@ celery_app.conf.update(
 
 
 @celery_app.task(bind=True, max_retries=2)
-def process_call_task(
+def process_webhook_call_task(
     self,
     job_id: str,
-    file_path: str,
-    filename: str,
+    transcription: Dict[str, Any],
     user_email: str,
 ):
     """
-    Process a sales call asynchronously.
+    Process a call from ElevenLabs webhook asynchronously.
     
-    This task handles the full analysis pipeline:
-    1. Transcription with Whisper
-    2. PII redaction with Presidio
-    3. AI analysis with GPT-4o
-    4. Statistics computation
-    5. Conversation intelligence
-    6. Keyword detection
-    7. Call scoring
-    8. PDF generation
-    9. Email notification
+    This task handles the analysis pipeline:
+    1. AI analysis with GPT-4o
+    2. Statistics computation
+    3. Conversation intelligence
+    4. Keyword detection
+    5. Call scoring
+    6. PDF generation
+    7. Email notification
     """
     from services import (
-        TranscriberService,
         AnalyzerService,
         PDFGeneratorService,
         EmailSenderService,
@@ -70,7 +66,6 @@ def process_call_task(
     
     # Initialize services
     db = DatabaseService()
-    transcriber = TranscriberService(whisper_model=Config.WHISPER_MODEL)
     analyzer = AnalyzerService(api_key=Config.OPENAI_API_KEY, model=Config.OPENAI_MODEL)
     analytics = AnalyticsService()
     pdf_generator = PDFGeneratorService()
@@ -80,93 +75,39 @@ def process_call_task(
     keyword_tracking = KeywordTrackingService()
     
     try:
-        # Update task state
-        self.update_state(state="TRANSCRIBING", meta={"step": "transcribing"})
-        
-        # Get call record to check call_type
-        call_record = db.get_call(job_id)
-        call_type = call_record.get("call_type", "real") if call_record else "real"
-        
-        # Step 1: Transcribe (with or without redaction based on call type)
-        if call_type == "ai_agent":
-            logger.info(f"[{job_id}] Starting transcription (AI agent call - no redaction)...")
-        else:
-            logger.info(f"[{job_id}] Starting transcription (real call - with PII redaction)...")
-        
-        db.update_call(job_id, status="transcribing")
-        
-        # SECURITY: Read encrypted file if needed
-        from services.secure_storage import SecureStorageService
-        secure_storage = SecureStorageService()
-        
-        try:
-            # Try to read as encrypted file first
-            file_content = secure_storage.read_file_secure(file_path)
-            # Write to temp file for transcription
-            import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_path)[1]) as temp_file:
-                temp_file.write(file_content)
-                temp_file_path = temp_file.name
-        except Exception:
-            # Fallback to direct file path (for unencrypted files)
-            temp_file_path = file_path
-        
-        # Conditionally transcribe based on call type
-        if call_type == "ai_agent":
-            # AI agent calls: no PII redaction needed
-            transcription = transcriber.transcribe_only(temp_file_path)
-            # For AI agent calls, original_text and redacted_text are the same
-            # No need to clear original_text since it's not sensitive
-        else:
-            # Real calls: transcribe with PII redaction
-            transcription = transcriber.transcribe_and_redact(temp_file_path)
-            
-            # SECURITY: Clear original_text from memory immediately
-            original_text = transcription.get("original_text")
-            if original_text:
-                transcription.pop("original_text", None)
-                del original_text
-        
-        # Clean up temp file if we created one
-        if temp_file_path != file_path and os.path.exists(temp_file_path):
-            try:
-                os.unlink(temp_file_path)
-            except Exception:
-                pass
-        
-        # Step 2: Analyze with GPT-4o
+        # Step 1: Analyze with GPT-4o
         self.update_state(state="ANALYZING", meta={"step": "analyzing"})
         logger.info(f"[{job_id}] Analyzing with GPT-4o...")
         db.update_call(job_id, status="analyzing")
         
         analysis = analyzer.analyze(
-            transcript=transcription["redacted_text"],
+            transcript=transcription["text"],
             duration_min=transcription.get("duration_min", 0),
         )
         
-        # Step 3: Compute call stats
+        # Step 2: Compute call stats
         logger.info(f"[{job_id}] Computing call stats...")
         stats = analyzer.compute_stats(transcription.get("segments", []))
         
-        # Step 4: Enhanced analytics
+        # Step 3: Enhanced analytics
         logger.info(f"[{job_id}] Running enhanced analytics...")
         enhanced_analytics = analytics.analyze_call(
-            transcript=transcription["redacted_text"],
+            transcript=transcription["text"],
             segments=transcription.get("segments", []),
         )
         
-        # Step 5: Conversation intelligence
+        # Step 4: Conversation intelligence
         logger.info(f"[{job_id}] Running conversation intelligence...")
         conv_intel_data = conv_intel.analyze(
             segments=transcription.get("segments", []),
-            transcript=transcription["redacted_text"],
+            transcript=transcription["text"],
         )
         
-        # Step 6: Keyword tracking
+        # Step 5: Keyword tracking
         logger.info(f"[{job_id}] Running keyword tracking...")
         keywords_data = keyword_tracking.detect_keywords(
             call_id=job_id,
-            transcript=transcription["redacted_text"],
+            transcript=transcription["text"],
             segments=transcription.get("segments", []),
             user_email=user_email,
             save_occurrences=True,
@@ -175,34 +116,49 @@ def process_call_task(
             segments=transcription.get("segments", []),
         )
         
-        # Step 7: Generate call score
+        # Step 6: Generate call score
         logger.info(f"[{job_id}] Generating call score...")
         call_score = scoring.score_call(
             call_id=job_id,
-            transcript=transcription["redacted_text"],
+            transcript=transcription["text"],
             stats=stats,
             user_email=user_email,
         )
         
-        # Step 8: Generate PDFs
+        # Step 7: Generate PDFs
         self.update_state(state="GENERATING_PDF", meta={"step": "generating_pdf"})
         logger.info(f"[{job_id}] Generating PDFs...")
         db.update_call(job_id, status="generating_pdf")
         
-        coaching_pdf_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_coaching.pdf")
-        stats_pdf_path = os.path.join(Config.UPLOAD_FOLDER, f"{job_id}_stats.pdf")
+        output_dir = os.environ.get("OUTPUT_DIR", "/tmp/sales-call-analyzer")
+        os.makedirs(output_dir, exist_ok=True)
         
-        pdf_generator.generate_coaching_report(analysis, coaching_pdf_path)
-        pdf_generator.generate_stats_report(stats, stats_pdf_path)
+        coaching_pdf_path = os.path.join(output_dir, f"{job_id}_coaching.pdf")
+        stats_pdf_path = os.path.join(output_dir, f"{job_id}_stats.pdf")
         
-        # Step 9: Send email
+        pdf_generator.generate_coaching_report(
+            analysis=analysis,
+            output_path=coaching_pdf_path,
+            score_data=call_score,
+            conv_intel=conv_intel_data,
+            keywords_data=keywords_data,
+        )
+        pdf_generator.generate_stats_report(
+            stats=stats,
+            output_path=stats_pdf_path,
+            conv_intel=conv_intel_data,
+        )
+        
+        # Step 8: Send email
         self.update_state(state="SENDING_EMAIL", meta={"step": "sending_email"})
         logger.info(f"[{job_id}] Sending email...")
         db.update_call(job_id, status="sending_email")
         
+        agent_name = transcription.get("agent_name", "AI Agent")
+        
         email_sender.send_report(
             to_email=user_email,
-            subject=f"Call Analysis: {filename}",
+            subject=f"Call Analysis: {agent_name} Call",
             coaching_pdf_path=coaching_pdf_path,
             stats_pdf_path=stats_pdf_path,
         )
@@ -213,29 +169,16 @@ def process_call_task(
         stats["keywords"] = keywords_data
         stats["call_phases"] = call_phases
         
-        # SECURITY: Remove original_text before storing (already removed, but double-check)
-        transcription_safe = transcription.copy()
-        transcription_safe.pop("original_text", None)
-        
-        # SECURITY: Ensure original_text is cleared from memory
-        if "original_text" in transcription:
-            del transcription["original_text"]
-        
         db.update_call(
             job_id,
             status="complete",
             completed_at=datetime.utcnow().isoformat(),
-            transcription_json=transcription_safe,
+            transcription_json=transcription,
             analysis_json=analysis,
             stats_json=stats,
             coaching_pdf_path=coaching_pdf_path,
             stats_pdf_path=stats_pdf_path,
         )
-        
-        # SECURITY: Clean up audio file securely
-        from services.secure_storage import SecureStorageService
-        secure_storage = SecureStorageService()
-        secure_storage.delete_file_secure(file_path)
         
         logger.info(f"[{job_id}] Analysis complete!")
         
@@ -246,58 +189,17 @@ def process_call_task(
         }
         
     except Exception as e:
-        # SECURITY: Use safe exception logging
         from services.logging_security import safe_log_exception, sanitize_string
         safe_log_exception(logger, f"[{job_id}] Analysis failed", exc_info=True)
         
-        # Sanitize error message before storing
         error_msg = sanitize_string(str(e))
         db.update_call(job_id, status="error", error=error_msg)
-        
-        # SECURITY: Clean up file even on error
-        try:
-            from services.secure_storage import SecureStorageService
-            secure_storage = SecureStorageService()
-            secure_storage.delete_file_secure(file_path)
-        except Exception:
-            pass
         
         # Retry on transient errors
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60)
         
         raise
-
-
-@celery_app.task
-def cleanup_old_files():
-    """
-    Periodic task to clean up old uploaded files.
-    
-    Run this hourly via Celery beat.
-    """
-    import glob
-    from datetime import datetime, timedelta
-    
-    logger.info("Running file cleanup task...")
-    
-    cutoff = datetime.now() - timedelta(hours=24)
-    upload_folder = Config.UPLOAD_FOLDER
-    
-    count = 0
-    for pattern in ["*.wav", "*.mp3", "*.m4a", "*.ogg", "*.webm"]:
-        for filepath in glob.glob(os.path.join(upload_folder, pattern)):
-            try:
-                mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-                if mtime < cutoff:
-                    os.unlink(filepath)
-                    count += 1
-                    logger.info(f"Deleted old file: {filepath}")
-            except Exception as e:
-                logger.error(f"Failed to delete {filepath}: {e}")
-    
-    logger.info(f"Cleanup complete. Deleted {count} files.")
-    return {"deleted": count}
 
 
 @celery_app.task
@@ -314,7 +216,7 @@ def send_weekly_digest(user_email: str):
     scoring = ScoringService(api_key=Config.OPENAI_API_KEY, model=Config.OPENAI_MODEL)
     
     # Get calls from past week
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     week_ago = datetime.utcnow() - timedelta(days=7)
     
     calls = db.list_calls(

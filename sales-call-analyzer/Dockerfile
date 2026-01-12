@@ -1,29 +1,22 @@
-# Sales Call Analyzer - Production Dockerfile
-# Self-contained build from within sales-call-analyzer directory
+# AI Call Analyzer - Production Dockerfile
+# Receives transcripts via ElevenLabs webhooks and analyzes with GPT-4o
 FROM python:3.11-slim
-
-# Build args
-ARG WHISPER_MODEL=tiny
 
 # Environment
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
-ENV WHISPER_MODEL=${WHISPER_MODEL}
 ENV PORT=8080
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
     curl \
-    # WeasyPrint dependencies
+    # WeasyPrint dependencies for PDF generation
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libgdk-pixbuf-2.0-0 \
     libffi-dev \
     shared-mime-info \
-    # Build tools for some Python packages
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -34,16 +27,10 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# Download Whisper model at build time (to avoid download on first request)
-RUN python -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
-
-# Download spaCy model for Presidio
-RUN python -m spacy download en_core_web_lg
-
-# Copy application code (includes local presidio_audio_redactor module)
+# Copy application code
 COPY . .
 
-# Create upload directory
+# Create output directory for PDFs
 RUN mkdir -p /tmp/sales-call-analyzer
 
 # Create non-root user
@@ -55,16 +42,14 @@ USER appuser
 EXPOSE ${PORT}
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Run with gunicorn
-# Using database storage, so multiple workers are safe
-# Increase workers for better concurrency (2-4 recommended for CPU-bound tasks)
 CMD gunicorn app:app \
     --bind 0.0.0.0:${PORT} \
     --workers 2 \
     --threads 4 \
-    --timeout 600 \
+    --timeout 120 \
     --access-logfile - \
     --error-logfile -

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Sales Call Analyzer{% endblock %}</title>
+    <title>{% block title %}AI Call Analyzer{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     {% block head %}{% endblock %}
 </head>
@@ -11,15 +11,14 @@
     <div class="app">
         <nav class="navbar">
             <div class="nav-brand">
-                <a href="{{ url_for('index') }}">📞 Sales Call Analyzer</a>
+                <a href="{{ url_for('index') }}">🤖 AI Call Analyzer</a>
             </div>
             <div class="nav-links">
                 {% if session.get('user_email') %}
                     <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
-                    <a href="{{ url_for('team') }}" class="nav-link">Team</a>
+                    <a href="{{ url_for('agents') }}" class="nav-link">Agents</a>
                     <a href="{{ url_for('history') }}" class="nav-link">History</a>
-                    <a href="{{ url_for('upload') }}" class="nav-link">Upload</a>
-                    <a href="{{ url_for('pii_redaction') }}" class="nav-link">🔒 PII Redaction</a>
+                    <a href="{{ url_for('webhook_status') }}" class="nav-link">🔗 Webhooks</a>
                     <a href="{{ url_for('rubrics') }}" class="nav-link">Rubrics</a>
                     <a href="{{ url_for('keywords') }}" class="nav-link">Keywords</a>
                     <a href="{{ url_for('playlists') }}" class="nav-link">Playlists</a>
@@ -47,7 +46,7 @@
         </main>
 
         <footer class="footer">
-            <p>Sales Call Analyzer &middot; Powered by Presidio + Whisper</p>
+            <p>AI Call Analyzer &middot; Powered by ElevenLabs + GPT-4o</p>
         </footer>
     </div>
 

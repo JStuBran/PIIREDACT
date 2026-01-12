@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Report - Sales Call Analyzer{% endblock %}
+{% block title %}Report - AI Call Analyzer{% endblock %}
 
 {% block content %}
 <div class="report-container">
@@ -8,11 +8,9 @@
         <div>
             <h1>Call Analysis Report</h1>
             <p class="subtitle">
-                {{ job.filename }} &middot; {{ job.completed_at.strftime('%Y-%m-%d') if job.completed_at else '' }}
-                {% if job.call_type == 'ai_agent' %}
-                    <span class="call-type-badge call-type-ai" style="margin-left: 12px;">🤖 AI Agent Call</span>
-                {% else %}
-                    <span class="call-type-badge call-type-real" style="margin-left: 12px;">👤 Real Call</span>
+                <span class="agent-badge">🤖 {{ job.agent_name or 'AI Agent' }}</span>
+                {% if job.completed_at %}
+                    &middot; {{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}
                 {% endif %}
             </p>
         </div>
@@ -75,7 +73,7 @@
     <!-- Percentile Rankings -->
     {% if rankings %}
     <div class="rankings-section">
-        <h3>Your Performance vs Team</h3>
+        <h3>Performance vs Other Agents</h3>
         <div class="rankings-grid">
             {% if rankings.duration_percentile is not none %}
             <div class="ranking-item">
@@ -221,23 +219,23 @@
                         <div class="ratio-segment agent" style="width: {{ conv_intel.talk_patterns.agent_talk_ratio }}%">
                             {{ conv_intel.talk_patterns.agent_talk_ratio }}%
                         </div>
-                        <div class="ratio-segment customer" style="width: {{ conv_intel.talk_patterns.customer_talk_ratio }}%">
+                        <div class="ratio-segment user" style="width: {{ conv_intel.talk_patterns.customer_talk_ratio }}%">
                             {{ conv_intel.talk_patterns.customer_talk_ratio }}%
                         </div>
                     </div>
                     <div class="ratio-labels">
-                        <span>Rep</span>
-                        <span>Customer</span>
+                        <span>Agent</span>
+                        <span>User</span>
                     </div>
                     <div class="ratio-assessment {{ conv_intel.talk_patterns.assessment }}">
                         {% if conv_intel.talk_patterns.assessment == 'balanced' %}
                         ✅ Balanced conversation
                         {% elif conv_intel.talk_patterns.assessment == 'agent_dominated' %}
-                        ⚠️ Rep talked too much - aim for more listening
+                        ⚠️ Agent talked too much - aim for more listening
                         {% elif conv_intel.talk_patterns.assessment == 'slightly_high' %}
-                        💡 Consider letting customer talk more
+                        💡 Consider letting user talk more
                         {% elif conv_intel.talk_patterns.assessment == 'customer_dominated' %}
-                        ✅ Great listening! Customer was engaged
+                        ✅ Great listening! User was engaged
                         {% else %}
                         {{ conv_intel.talk_patterns.assessment|replace('_', ' ')|title }}
                         {% endif %}
@@ -282,14 +280,14 @@
                 <!-- Engagement -->
                 {% if conv_intel.engagement %}
                 <div class="intel-card">
-                    <h4>Customer Engagement</h4>
+                    <h4>User Engagement</h4>
                     <div class="engagement-score {{ conv_intel.engagement.level }}">
                         <span class="score">{{ conv_intel.engagement.score }}</span>
                         <span class="level">{{ conv_intel.engagement.level|title }}</span>
                     </div>
                     <div class="engagement-details">
                         <span>+{{ conv_intel.engagement.positive_signals }} positive signals</span>
-                        <span>{{ conv_intel.engagement.customer_questions }} customer questions</span>
+                        <span>{{ conv_intel.engagement.customer_questions }} user questions</span>
                     </div>
                 </div>
                 {% endif %}
@@ -322,7 +320,7 @@
             <div class="monologue-warning">
                 ⚠️ <strong>{{ conv_intel.monologues.count }} long monologue(s) detected</strong> 
                 ({{ conv_intel.monologues.total_time_sec|round|int }}s total).
-                Try to engage the customer more frequently.
+                Try to engage the user more frequently.
             </div>
             {% endif %}
         </section>
@@ -330,13 +328,116 @@
     </div>
 
     <div class="report-footer">
-        <a href="{{ url_for('upload') }}" class="btn btn-outline">← Analyze Another Call</a>
+        <a href="{{ url_for('history') }}" class="btn btn-outline">← View All Calls</a>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <style>
+.report-container {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.report-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.agent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    color: #7b1fa2;
+    border: 1px solid #ce93d8;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.report-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.report-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.report-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+}
+
+.report-section.full-width {
+    grid-column: 1 / -1;
+}
+
+.report-section h2 {
+    font-size: 18px;
+    margin-bottom: 16px;
+}
+
+.report-section table {
+    width: 100%;
+}
+
+.report-section td {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.coaching-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.coaching-grid h4 {
+    margin-bottom: 12px;
+}
+
+.focus-chip {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #e3f2fd;
+    border-left: 3px solid var(--primary);
+    border-radius: var(--radius-sm);
+}
+
+.report-footer {
+    text-align: center;
+    padding-top: 24px;
+}
+
 /* Score Card Styles */
 .score-card {
     background: var(--card-bg);
@@ -363,7 +464,6 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #f0f0f0, #e0e0e0);
     border: 4px solid;
 }
 
@@ -390,25 +490,16 @@
 .score-value {
     font-size: 36px;
     font-weight: 800;
-    line-height: 1;
 }
 
 .score-label {
     font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
     color: var(--text-muted);
-    margin-top: 4px;
 }
 
 .score-summary {
     flex: 1;
-}
-
-.score-summary p {
-    margin: 0 0 16px 0;
-    color: var(--text-muted);
-    line-height: 1.6;
 }
 
 .score-highlight {
@@ -428,14 +519,6 @@
     border-left: 3px solid #f59e0b;
 }
 
-.score-breakdown h4 {
-    margin: 0 0 16px 0;
-    font-size: 14px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-}
-
 .criteria-scores {
     display: flex;
     flex-direction: column;
@@ -450,18 +533,6 @@
 
 .criterion-info {
     width: 200px;
-    flex-shrink: 0;
-}
-
-.criterion-name {
-    font-weight: 500;
-    font-size: 14px;
-}
-
-.criterion-weight {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-left: 8px;
 }
 
 .criterion-bar-container {
@@ -476,29 +547,21 @@
     height: 100%;
     background: var(--primary);
     border-radius: 4px;
-    transition: width 0.3s ease;
 }
 
 .criterion-score-value {
     width: 50px;
     text-align: right;
     font-weight: 600;
-    font-size: 14px;
 }
 
-/* Rankings Section */
+/* Rankings */
 .rankings-section {
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 20px;
     margin-bottom: 24px;
-    box-shadow: var(--shadow);
-}
-
-.rankings-section h3 {
-    font-size: 18px;
-    margin-bottom: 16px;
 }
 
 .rankings-grid {
@@ -511,16 +574,7 @@
     background: var(--bg);
     padding: 12px;
     border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
     text-align: center;
-}
-
-.ranking-label {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
 }
 
 .ranking-value {
@@ -529,24 +583,11 @@
     color: var(--primary);
 }
 
-@media (max-width: 768px) {
-    .score-main {
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-    }
-    
-    .criterion-info {
-        width: 120px;
-    }
-}
-
-/* Conversation Intelligence Styles */
+/* Intel Grid */
 .intel-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 16px;
-    margin-top: 16px;
 }
 
 .intel-card {
@@ -560,11 +601,9 @@
     margin: 0 0 12px 0;
     font-size: 14px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
     color: var(--text-muted);
 }
 
-/* Talk Ratio Bar */
 .talk-ratio-bar {
     display: flex;
     height: 32px;
@@ -580,14 +619,13 @@
     font-size: 12px;
     font-weight: 600;
     color: white;
-    min-width: 40px;
 }
 
 .ratio-segment.agent {
     background: var(--primary);
 }
 
-.ratio-segment.customer {
+.ratio-segment.user {
     background: #64748b;
 }
 
@@ -596,38 +634,36 @@
     justify-content: space-between;
     font-size: 12px;
     color: var(--text-muted);
-    margin-bottom: 12px;
 }
 
-.ratio-assessment {
+.ratio-assessment, .q-assessment, .objection-handling {
     padding: 8px 12px;
     border-radius: var(--radius-sm);
     font-size: 13px;
     text-align: center;
+    margin-top: 12px;
 }
 
-.ratio-assessment.balanced,
-.ratio-assessment.customer_dominated {
+.ratio-assessment.balanced, .ratio-assessment.customer_dominated,
+.q-assessment.good, .objection-handling.addressed {
     background: #dcfce7;
     color: #166534;
 }
 
-.ratio-assessment.agent_dominated {
+.ratio-assessment.agent_dominated, .objection-handling.not_addressed {
     background: #fee2e2;
     color: #991b1b;
 }
 
-.ratio-assessment.slightly_high,
-.ratio-assessment.slightly_low {
+.ratio-assessment.slightly_high, .q-assessment.too_few,
+.q-assessment.too_many_closed, .objection-handling.partially_addressed {
     background: #fef3c7;
     color: #92400e;
 }
 
-/* Question Stats */
 .question-stats {
     display: flex;
     gap: 16px;
-    margin-bottom: 12px;
 }
 
 .q-stat {
@@ -647,45 +683,15 @@
     text-transform: uppercase;
 }
 
-.q-assessment {
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    text-align: center;
-}
-
-.q-assessment.good {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.q-assessment.too_few,
-.q-assessment.too_many_closed,
-.q-assessment.needs_discovery,
-.q-assessment.too_many_leading {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-/* Engagement Score */
 .engagement-score {
     text-align: center;
     padding: 16px;
     border-radius: var(--radius-sm);
-    margin-bottom: 12px;
 }
 
-.engagement-score.high {
-    background: #dcfce7;
-}
-
-.engagement-score.medium {
-    background: #fef3c7;
-}
-
-.engagement-score.low {
-    background: #fee2e2;
-}
+.engagement-score.high { background: #dcfce7; }
+.engagement-score.medium { background: #fef3c7; }
+.engagement-score.low { background: #fee2e2; }
 
 .engagement-score .score {
     display: block;
@@ -693,25 +699,10 @@
     font-weight: 700;
 }
 
-.engagement-score .level {
-    font-size: 14px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.engagement-details {
-    display: flex;
-    justify-content: space-around;
-    font-size: 12px;
-    color: var(--text-muted);
-}
-
-/* Objections */
 .objection-count {
     font-size: 32px;
     font-weight: 700;
     text-align: center;
-    margin-bottom: 8px;
 }
 
 .objection-types {
@@ -719,7 +710,7 @@
     flex-wrap: wrap;
     gap: 6px;
     justify-content: center;
-    margin-bottom: 12px;
+    margin: 8px 0;
 }
 
 .objection-tag {
@@ -727,64 +718,30 @@
     background: #f1f5f9;
     border-radius: 12px;
     font-size: 11px;
-    text-transform: capitalize;
 }
 
-.objection-handling {
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    text-align: center;
-}
-
-.objection-handling.addressed {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.objection-handling.partially_addressed {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.objection-handling.not_addressed {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-/* Monologue Warning */
 .monologue-warning {
     margin-top: 16px;
     padding: 12px 16px;
     background: #fef3c7;
     border: 1px solid #fbbf24;
     border-radius: var(--radius-sm);
-    font-size: 14px;
 }
 
-/* Call Type Badges */
-.call-type-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.call-type-real {
-    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-    color: #1976d2;
-    border: 1px solid #90caf9;
-}
-
-.call-type-ai {
-    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
-    color: #7b1fa2;
-    border: 1px solid #ce93d8;
+@media (max-width: 768px) {
+    .report-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .coaching-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .score-main {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
 }
 </style>
 {% endblock %}

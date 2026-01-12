@@ -630,7 +630,7 @@ class ScoringService:
         rep_name: Optional[str] = None,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """Get scores for calls belonging to a user, optionally filtered by rep."""
+        """Get scores for calls belonging to a user, optionally filtered by agent."""
         conn = self._get_connection()
         
         if self.db_type == "postgresql":
@@ -642,17 +642,17 @@ class ScoringService:
 
         if rep_name:
             query = f"""
-                SELECT cs.*, c.rep_name, c.created_at as call_date
+                SELECT cs.*, c.agent_name, c.created_at as call_date
                 FROM call_scores cs
                 JOIN calls c ON cs.call_id = c.id
-                WHERE c.user_email = {param} AND c.rep_name = {param}
+                WHERE c.user_email = {param} AND c.agent_name = {param}
                 ORDER BY c.created_at DESC
                 LIMIT {param}
             """
             cursor.execute(query, (user_email, rep_name, limit))
         else:
             query = f"""
-                SELECT cs.*, c.rep_name, c.created_at as call_date
+                SELECT cs.*, c.agent_name, c.created_at as call_date
                 FROM call_scores cs
                 JOIN calls c ON cs.call_id = c.id
                 WHERE c.user_email = {param}
@@ -753,14 +753,14 @@ class ScoringService:
 
         query = f"""
             SELECT 
-                c.rep_name,
+                c.agent_name,
                 AVG(cs.overall_score) as avg_score,
                 COUNT(*) as call_count,
                 MAX(c.created_at) as last_call
             FROM call_scores cs
             JOIN calls c ON cs.call_id = c.id
-            WHERE c.user_email = {param} AND c.rep_name IS NOT NULL
-            GROUP BY c.rep_name
+            WHERE c.user_email = {param} AND c.agent_name IS NOT NULL
+            GROUP BY c.agent_name
             HAVING COUNT(*) >= 3
             ORDER BY avg_score DESC
             LIMIT {param}
@@ -771,7 +771,7 @@ class ScoringService:
 
         return [
             {
-                "rep_name": row["rep_name"] if self.db_type == "postgresql" else row[0],
+                "agent_name": row["agent_name"] if self.db_type == "postgresql" else row[0],
                 "avg_score": round(row["avg_score"] if self.db_type == "postgresql" else row[1], 1),
                 "call_count": row["call_count"] if self.db_type == "postgresql" else row[2],
                 "last_call": row["last_call"] if self.db_type == "postgresql" else row[3],

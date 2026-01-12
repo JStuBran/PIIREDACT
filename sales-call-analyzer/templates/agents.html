@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block title %}Agents - AI Call Analyzer{% endblock %}
+
+{% block content %}
+<div class="agents-page">
+    <div class="page-header">
+        <h1>🤖 AI Agents</h1>
+        <p class="subtitle">Performance overview of your ElevenLabs agents</p>
+    </div>
+
+    {% if agent_stats %}
+    <div class="agents-grid">
+        {% for agent in agent_stats %}
+        <div class="agent-card">
+            <div class="agent-header">
+                <div class="agent-avatar">🤖</div>
+                <div class="agent-info">
+                    <h3 class="agent-name">{{ agent.agent_name }}</h3>
+                    <span class="agent-id">{{ agent.agent_id[:8] }}...</span>
+                </div>
+                <div class="agent-calls-count">
+                    <span class="count">{{ agent.total_calls }}</span>
+                    <span class="label">calls</span>
+                </div>
+            </div>
+
+            <div class="agent-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Avg Duration</span>
+                    <span class="stat-value">{{ agent.avg_duration }} min</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Avg Questions</span>
+                    <span class="stat-value">{{ agent.avg_questions }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Avg Filler Words</span>
+                    <span class="stat-value">{{ agent.avg_filler }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Talk Ratio</span>
+                    <span class="stat-value">{{ agent.avg_talk_ratio }}%</span>
+                </div>
+            </div>
+
+            <div class="agent-recent">
+                <h4>Recent Calls</h4>
+                <div class="recent-calls-list">
+                    {% for call in agent.recent_calls %}
+                    <a href="{{ url_for('report', job_id=call.id) }}" class="recent-call-item">
+                        <span class="call-date">
+                            {% if call.created_at %}
+                                {{ call.created_at.strftime('%m/%d %H:%M') }}
+                            {% endif %}
+                        </span>
+                        <span class="call-duration">
+                            {% if call.stats_json %}
+                                {{ call.stats_json.duration_min }} min
+                            {% endif %}
+                        </span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="agent-actions">
+                <a href="{{ url_for('history', agent=agent.agent_id) }}" class="btn btn-outline btn-sm">View All Calls</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">🤖</div>
+        <h3>No agents found</h3>
+        <p>Agents will appear here once ElevenLabs webhooks are received.</p>
+        <a href="{{ url_for('webhook_status') }}" class="btn btn-primary">Configure Webhooks</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.agents-page {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.page-header {
+    margin-bottom: 32px;
+}
+
+.page-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.page-header .subtitle {
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+.agents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 24px;
+}
+
+.agent-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+.agent-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--primary);
+}
+
+.agent-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.agent-avatar {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.agent-info {
+    flex: 1;
+}
+
+.agent-name {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.agent-id {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: monospace;
+}
+
+.agent-calls-count {
+    text-align: center;
+    padding: 8px 16px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+}
+
+.agent-calls-count .count {
+    display: block;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.agent-calls-count .label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.agent-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.stat-item {
+    background: var(--bg);
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.agent-recent {
+    margin-bottom: 16px;
+}
+
+.agent-recent h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-muted);
+}
+
+.recent-calls-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.recent-call-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: var(--text);
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.recent-call-item:hover {
+    background: var(--primary);
+    color: white;
+}
+
+.call-date {
+    font-weight: 500;
+}
+
+.call-duration {
+    color: var(--text-muted);
+}
+
+.recent-call-item:hover .call-duration {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.agent-actions {
+    text-align: center;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+    .agents-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+

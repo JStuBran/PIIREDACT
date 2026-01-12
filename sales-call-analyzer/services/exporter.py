@@ -38,7 +38,7 @@ class ExporterService:
             
             # Header
             writer.writerow([
-                'ID', 'Filename', 'Rep Name', 'Created At', 'Status',
+                'ID', 'Agent Name', 'Agent ID', 'Created At', 'Status',
                 'Duration (min)', 'Questions', 'Filler Words', 'Talk Ratio (%)',
             ])
             
@@ -49,8 +49,8 @@ class ExporterService:
                 
                 writer.writerow([
                     call.get("id", ""),
-                    call.get("filename", ""),
-                    call.get("rep_name", ""),
+                    call.get("agent_name", ""),
+                    call.get("agent_id", ""),
                     call.get("created_at", "")[:19] if call.get("created_at") else "",
                     call.get("status", ""),
                     stats.get("duration_min", 0),
@@ -82,8 +82,8 @@ class ExporterService:
         for call in calls:
             export_call = {
                 "id": call.get("id"),
-                "filename": call.get("filename"),
-                "rep_name": call.get("rep_name"),
+                "agent_name": call.get("agent_name"),
+                "agent_id": call.get("agent_id"),
                 "created_at": call.get("created_at"),
                 "completed_at": call.get("completed_at"),
                 "status": call.get("status"),
